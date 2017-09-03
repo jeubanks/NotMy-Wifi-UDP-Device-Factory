@@ -522,7 +522,7 @@ local TPLINK = {
 			udp:close()
 			retry_count = retry_count - 1
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
-		if (table.getn(DISCOVERED) == 0) then
+		if (table.getn(DISCOVERED) == 1000) then
 			-- broadcast search failed - do device by device search
 			local LocalNet = getLocalNet()
 			Idx = 1
@@ -544,7 +544,7 @@ local TPLINK = {
 		end
 		if (table.getn(DISCOVERED) == 0) then
 			luup.log("("..PLUGIN.NAME.."::TPLINK::DoDiscover)   Discovery found no devices.")
-			return true, nil
+			return true, DISCOVERED
 		else
 			local devCount = table.getn(DISCOVERED)
 			luup.log("("..PLUGIN.NAME.."::TPLINK::DoDiscovery)   Discovery found ["..(devCount or "NIL").."] devices.",1)
@@ -835,7 +835,7 @@ local SENGLED = {
 			udp:close()
 			retry_count = retry_count - 1
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
-		if (table.getn(DISCOVERED) == 0) then
+		if (table.getn(DISCOVERED) == 1000) then
 			-- broadcast search failed - do device by device search
 			local LocalNet = getLocalNet()
 			Idx = 1
@@ -859,7 +859,7 @@ local SENGLED = {
 		end
 		if (table.getn(DISCOVERED) == 0) then
 			luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscover)   Discovery found no devices.")
-			return true, nil
+			return true, DISCOVERED
 		else
 			local devCount = table.getn(DISCOVERED)
 			luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery)   Discovery found ["..(devCount or "NIL").."] devices.",1)
@@ -1069,7 +1069,7 @@ local EcoSwitch = {
 			udp:close()
 			retry_count = retry_count - 1
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
-		if (table.getn(DISCOVERED) == 0) then
+		if (table.getn(DISCOVERED) == 1000) then
 			-- broadcast search failed - do device by device search
 			local LocalNet = getLocalNet()
 			Idx = 1
@@ -1091,7 +1091,7 @@ local EcoSwitch = {
 		end
 		if (table.getn(DISCOVERED) == 0) then
 			luup.log("("..PLUGIN.NAME.."::EcoSwitch::DoDiscover)   Discovery found no devices.")
-			return true, nil
+			return true, DISCOVERED
 		else
 			local devCount = table.getn(DISCOVERED)
 			luup.log("("..PLUGIN.NAME.."::EcoSwitch::DoDiscovery)   Discovery found ["..(devCount or "NIL").."] devices.",1)
