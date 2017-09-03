@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<implementation>
+	<files>L_ECO_Switch1.lua</files>
+	<startup>init</startup>
+
+	<actionList>
+
+		<action>
+			<serviceId>urn:micasaverde-com:serviceId:ECO_Switch1</serviceId>
+			<name>AddDiscoveredDevice</name>
+			<job>
+				return UPNP_AddDevice(lul_device,lul_settings)
+			</job>
+		</action>
+
+		<action>
+			<serviceId>urn:micasaverde-com:serviceId:ECO_Switch1</serviceId>
+			<name>RemoveConfiguredDevice</name>
+			<job>
+				return UPNP_RemoveDevice(lul_device,lul_settings)
+			</job>
+		</action>
+
+		<action>
+			<serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+			<name>SetTarget</name>
+			<job>
+				return UPNP_SetTarget(lul_device,lul_settings)
+			</job>
+		</action>
+    
+		<action>
+			<serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+			<name>GetStatus</name>
+			<job>
+				return UPNP_GetStatus(lul_device,lul_settings)
+			</job>
+		</action>
+
+    <action>
+      <serviceId>urn:upnp-org:serviceId:Dimming1</serviceId>
+      <name>SetLoadLevelTarget</name>
+      <job>
+				return UPNP_SetLoadLevelTarget(lul_device,lul_settings)
+      </job>
+    </action>
+		
+    <action>
+      <serviceId>urn:micasaverde-com:serviceId:Color1</serviceId>
+      <name>SetColor</name>
+      <job>
+				return UPNP_SetColor(lul_device,lul_settings)
+      </job>
+    </action>
+		
+    <action>
+      <serviceId>urn:micasaverde-com:serviceId:Color1</serviceId>
+      <name>SetColorRGB</name>
+      <job>
+				return UPNP_SetColorRGB(lul_device,lul_settings)
+      </job>
+    </action>
+		
+	</actionList>
+</implementation>
+
