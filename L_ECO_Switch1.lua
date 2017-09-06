@@ -1,4 +1,32 @@
-local version = "v1.9"
+--
+-- WiFi UDP Switch Controller (formerly ECO Switch)
+-- Version 2.0
+-- Plugin for   ECO Wifi Controlled Outlet,
+--              TP-LINK Wi-Fi Smart Plug and bulbs, and
+--              SENGLED Boost bulb/extenders
+-- by CYBRMAGE, Modified by Jim McGhee
+-- Copyright (C) 2009-2017
+--
+-- Derived from:
+-- Plugin for Belkin WeMo
+-- Copyright (C) 2009-2011 Deborah Pickett
+
+-- This program is free software; you can redistribute it and/or
+-- modify it under the terms of the GNU General Public License
+-- as published by the Free Software Foundation; either version 2
+-- of the License, or (at your option) any later version.
+
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+
+-- You should have received a copy of the GNU General Public License
+-- along with this program; if not, write to the Free Software
+-- Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+--
+
+local version = "v2.0"
 local PLUGIN = {
 	VERA_IP = "",
 	NAME = "WIFI_Switch_and_Light",
@@ -31,6 +59,9 @@ lug_device = 0
 switchID = ""
 retryCount = 1
 
+local socket = require("socket")
+local http = require("socket.http")
+
 local ECO_GATEWAY_DEVICE
 
 local CONFIGURED_DEVICES = {}
@@ -47,7 +78,28 @@ local RGB_LIGHT_DEVICE = 'D_DimmableRGBLight1.xml'
 
 
 log = luup.log
-debug = luup.log
+-- debug = luup.log
+
+local isDebug = true
+
+function bool2string(b)
+	return b and "true" or "false"
+end 
+
+function toBool(s)
+--	luup.log(" McGhee toBool:"..(bool2string(tonumber(s, 10) ~= 0))..".")
+	return (tonumber(s, 10) ~= 0)
+end
+
+function debug(s)
+	if (isDebug) then
+		luup.log(s)
+	end
+end
+
+function URLEnclode(s)
+	return string.gsub(s, "%A", function(c) return string.format("%%%02X", string.byte(c)) end)
+end
 
 function shellExecute(cmd, Output)
 	if (Output == nil) then Output = true end
@@ -386,7 +438,9 @@ local TPLINK = {
 
 	getColorSpec = function(self,colorTemp,hue,sat,bri)
 		local C0,C1,C2,C3,C4
-		if (tonumber(colorTemp,10) > 0) then
+
+		debug(" McGhee beginning getColorSpec: colorTemp="..(colorTemp or 'nil')..", hue="..(hue or 'nil')..", sat="..(sat or 'nil')..", bri="..(bri or 'nil'))
+		if (colorTemp > 0) then
 			if (colorTemp < 5500) then
 				C0 = math.floor(((colorTemp - 2200)/((5500-3000)/256)) + 0.5)
 			else
@@ -397,9 +451,12 @@ local TPLINK = {
 			-- HSB
 			C0 = ""
 			C1 = ""
-			C2, C3, C4 = self:HSVtoRGB(hue,sat,bri)			
+			if ((hue ~= nil) and (sat ~= nil) and (bri ~= nil)) then
+				C2, C3, C4 = self:HSVtoRGB(hue,sat,bri)
+			end
 		end
-		return "0="..C0.."1="..C1.."2="..C2.."3="..C3.."4="..C4
+		debug(" McGhee return from getColorSpec: 0="..(C0 or 'nil')..", 1="..(C1 or 'nil')..", 2="..(C2 or 'nil')..", 3="..(C3 or 'nil')..", 4="..(C4 or 'nil'))
+		return "0="..(C0 or '')..",1="..(C1 or '')..",2="..(C2 or '')..",3="..(C3 or '')..",4="..(C4 or '')
 	end,
 	
 	parseStatusResponse = function(self,packet)
@@ -411,46 +468,75 @@ local TPLINK = {
 			luup.log("("..PLUGIN.NAME.."::TPLINK::parseStatusResponse)      parsing key ["..(key or "NIL").."]")
 			if (key == "system") then
 				local sysinfo = data['get_sysinfo']
+				luup.log("("..PLUGIN.NAME.."::TPLINK::parseStatusResponse) McGhee sysinfo:[\n"..print_r(sysinfo).."\n]")
 				if ((sysinfo['type'] == "IOT.SMARTBULB") or (sysinfo["mic_type"] == "IOT.SMARTBULB")) then
-					sArray.isDimmable = (tonumber(sysinfo["is_dimmable"],10) == 1) and true or false
-					sArray.isTunable = (tonumber(sysinfo["is_variable_color_temp"],10) == 1) and true or false
-					sArray.isColor = (tonumber(sysinfo["is_color"],10) == 1) and true or false
-					if (sArray.isDimmable == false) then
-						sArray.powered = (tonumber(sysinfo["light_state"]["on_off"],10) == 1) and true or false
+					sArray.isDimmable = toBool(sysinfo["is_dimmable"])
+					luup.log(" McGhee isDimmable:"..bool2string(sArray.isDimmable)..".")
+					sArray.isTunable = toBool(sysinfo["is_variable_color_temp"])
+--					sArray.isTunable = (toBool(sysinfo["is_variable_color_temp"],10) == 1) and true or false
+					sArray.isColor = toBool(sysinfo["is_color"])
+--					sArray.isColor = (toBool(sysinfo["is_color"],10) == 1) and true or false
+					if (not sArray.isDimmable) then
+						sArray.powered = toBool(sysinfo["light_state"]["on_off"])
+--						sArray.powered = (toBool(sysinfo["light_state"]["on_off"],10) == 1) and true or false
+						luup.log(" McGhee is NOT dimmable")
 					else
-						sArray.powered = (tonumber(sysinfo["light_state"]["on_off"],10) == 1) and true or false
-						sArray.brightness = tonumber(sysinfo["light_state"]["brightness"],10)
+						sArray.powered = toBool(sysinfo["light_state"]["on_off"])
+--						sArray.powered = (toBool(sysinfo["light_state"]["on_off"],10) == 1) and true or false
+						if (sysinfo["light_state"]["dft_on_state"] == nil) then
+							sArray.brightness = tonumber(sysinfo["light_state"]["brightness"],10)
+						else
+							sArray.brightness = tonumber(sysinfo["light_state"]["dft_on_state"]["brightness"],10)
+						end
+						luup.log(" McGhee is dimmable, powered:"..bool2string(sArray.powered)..", brightness:"..sArray.brightness..".")
 					end
-					if (sArray.isTunable == true) then
-						sArray.color_temp = tonumber(sysinfo["light_state"]["color_temp"],10)
-						sArray.brightness = tonumber(sysinfo["light_state"]["brightness"],10)
-						sArrary.current_color = self:getColorSpec(sArray.color_temp)
+					if (sArray.isTunable) then
+						if (sysinfo["light_state"]["dft_on_state"] == nil) then
+							sArray.color_temp = tonumber(sysinfo["light_state"]["color_temp"],10)
+							sArray.brightness = tonumber(sysinfo["light_state"]["brightness"],10)
+						else
+							sArray.color_temp = tonumber(sysinfo["light_state"]["dft_on_state"]["color_temp"],10)
+							sArray.brightness = tonumber(sysinfo["light_state"]["dft_on_state"]["brightness"],10)
+						end
+						sArray.current_color = self:getColorSpec(sArray.color_temp)
+						luup.log(" McGhee is tunable, color_temp:"..sArray.color_temp..", brightness:"..sArray.brightness..", current_color:"..sArray.current_color..".")
 					end
-					if (sArray.isColor == true) then
+					if (sArray.isColor) then
 						sArray.hue = tonumber(sysinfo["light_state"]["hue"],10)
 						sArray.saturation = tonumber(sysinfo["light_state"]["saturation"],10)
-						sArray.brightness = tonumber(sysinfo["light_state"]["brightness"],10)
-						sArrary.current_color = self:getColorSpec(0,sArray.hue,sArray.saturation,sArray.brightness)
+						if (sysinfo["light_state"]["dft_on_state"] == nil) then
+							sArray.brightness = tonumber(sysinfo["light_state"]["brightness"],10)
+						else
+							sArray.brightness = tonumber(sysinfo["light_state"]["dft_on_state"]["brightness"],10)
+						end
+						sArray.current_color = self:getColorSpec(0,sArray.hue,sArray.saturation,sArray.brightness)
+						luup.log(" McGhee is color, color_temp:"..bool2string(sArray.color_temp)..", brightness:"..sArray.brightness..", current_color:"..sArray.current_color..".")
 					end
 				elseif ((sysinfo["type"] == "IOT.SMARTPLUGSWITCH") or (sysinfo["mic_type"] == "IOT.SMARTPLUGSWITCH")) then
-					sArray.powered = (tonumber(sysinfo["relay_state"],10) == 1) and true or false
+					sArray.powered = toBool(sysinfo["relay_state"])
 					sArray.isDimmable = false
 					sArray.isColor = false
 					sArray.isTunable = false
+					luup.log(" McGhee is IOT.SMARTPLUGSWITCH, powered:"..bool2string(sArray.powered)..".")
 				end
 			elseif (key == "smartlife.iot.smartbulb.lightingservice") then
-		luup.log("("..PLUGIN.NAME.."::TPLINK::parseStatusResponse)    decoded packet data [\n"..print_r(data).."\n]")
+				luup.log("("..PLUGIN.NAME.."::TPLINK::parseStatusResponse)    decoded packet data [\n"..print_r(data).."\n]")
 				local sysinfo = data['transition_light_state']
-				sArray.powered = (tonumber(sysinfo["on_off"],10) == 1) and true or false
-				sArray.brightness = tonumber(sysinfo["brightness"],10) or tonumber(sysinfo["dft_on_state"]["brightness"],10)
+				sArray.powered = toBool(sysinfo["on_off"])
+--				sArray.brightness = tonumber(sysinfo["brightness"],10) or tonumber(sysinfo["dft_on_state"]["brightness"],10)
+				if (sysinfo["dft_on_state"] == nil) then
+					sArray.brightness = tonumber(sysinfo["brightness"],10)
+				else
+					sArray.brightness = tonumber(sysinfo["dft_on_state"]["brightness"],10)
+				end
 				sArray.hue = tonumber(sysinfo["hue"],10) or tonumber(sysinfo["dft_on_state"]["hue"],10)
 				sArray.saturation = tonumber(sysinfo["saturation"],10) or tonumber(sysinfo["dft_on_state"]["saturation"],10)
 				sArray.color_temp = tonumber(sysinfo["color_temp"],10) or tonumber(sysinfo["dft_on_state"]["color_temp"],10)
 				sArray.err_code = sysinfo["err_code"]
-				sArrary.current_color = self:getColorSpec(sArray.color_temp,sArray.hue,sArray.saturation,sArray.brightness)
+				sArray.current_color = self:getColorSpec(sArray.color_temp,sArray.hue,sArray.saturation,sArray.brightness)
 			end
 		end
-		luup.log("("..PLUGIN.NAME.."::TPLINK::parseStatusResponse)    STATUS [\n"..print_r(STATUS).."\n]")
+		luup.log("("..PLUGIN.NAME.."::TPLINK::parseStatusResponse) McGhee sArray [\n"..print_r(sArray).."\n]")
 		return sArray
 	end,
 
@@ -643,6 +729,7 @@ local TPLINK = {
 		local colorTemp
 		local colorSpec
 		
+		debug("("..PLUGIN.NAME.."::TPLINK::setColor) McGhee colorTarget: "..(colorTarget or "NIL")..".")
 		if ((colorTarget:sub(1,1) == "W") or (colorTarget:sub(1,1) == "D")) then
 			local ctValue = tonumber(colorTarget:sub(2,#colorTarget),10)
 			if (colorTarget:sub(1,1) == "W") then
@@ -656,11 +743,74 @@ local TPLINK = {
 			luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Invalid Color Temperature specified.")
 			return nil
 		end
+
+		colorTemp = math.floor(colorTemp)
+		local status = self:setColorTemp(deviceConfig, colorTemp)
+		status.current_color = colorSpec
+		return status
+	end,
+
+--		colorTemp = math.floor(colorTemp)
+		
+--		debug("("..PLUGIN.NAME.."::TPLINK::setColor) McGhee colorTemp: "..(colorTemp or "NIL")..", colorSpec:"..(colorSpec or "NIL")..".")
+--		local swStatus = tonumber(luup.variable_get(SWITCH_SID,"Status",lul_device),10)
+--		local llStatus = tonumber(luup.variable_get(DIMMER_SID,"LoadLevelStatus",lul_device),10)
+--		local isOff = (llStatus == 0) and true or false
+--		luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) swStatus ["..(swStatus or "NIL").."] llStatus ["..(llStatus or "NIL").."] isOff ["..(isOff and "TRUE" or "FALSE").."].")
+--		local msg
+		
+--		msg = string.format(self.commands['IOT.SMARTBULB']['color_temp'],colorTemp)
+--		if (isOff == true) then
+--			msg = self.commands['IOT.SMARTBULB']['on']..","..msg..","..self.commands['IOT.SMARTBULB']['off']
+--		end
+--		msg = "{"..msg.."}"
+--		debug("("..PLUGIN.NAME.."::TPLINK::setColor) McGhee msg: "..(msg or "NIL")..".")
+
+--		local retry_count = 3
+--
+--		local err, resp = self:sendMessage(address, id, msg, retry_count)
+--		if (not err) then
+--			local status = self:parseStatusResponse(resp)
+--			if (status ~= nil) then
+--				luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Color Temperature of device with ID "..(id or "NIL").." set to: ["..(status.color_temp or "NIL").."]")
+--				status.current_color = colorSpec
+--				return status
+--			else
+--				luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Color Temperature change of device with ID "..(id or "NIL").." to: ["..(status.color_temp or "NIL").."] NOT VERIFIED")
+--				return nil
+--			end
+--		else
+--			luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Error setting color temperature of device with ID "..(id or "NIL")..".")
+--		end
+--		return nil
+--	end,
+	
+	setColorTemp = function(self,deviceConfig, colorTemp)
+		local lul_device = deviceConfig.VERA_ID
+		local address = deviceConfig.IP
+		local id = deviceConfig.ID
+--		local colorTemp
+--		local colorSpec
+		debug("("..PLUGIN.NAME.."::TPLINK::setColor) McGhee colorTemp: "..(colorTemp or "NIL")..".")
+		
+--		if ((colorTarget:sub(1,1) == "W") or (colorTarget:sub(1,1) == "D")) then
+--			local ctValue = tonumber(colorTarget:sub(2,#colorTarget),10)
+--			if (colorTarget:sub(1,1) == "W") then
+--				colorTemp = (((5500 - 2200)/256) * ctValue) + 2200
+--				colorSpec = "0="..ctValue..",1=,2=,3=,4="
+--			elseif (colorTarget:sub(1,1) == "D") then
+--				colorTemp = (((9000 - 5500)/256) * ctValue) + 5500
+--				colorSpec = "0=,1="..ctValue..",2=,3=,4="
+--			end
+--		else
+--			luup.log("("..PLUGIN.NAME.."::TPLINK::setColorTemp) Invalid Color Temperature specified.",1)
+--			return nil
+--		end
 		
 		local swStatus = tonumber(luup.variable_get(SWITCH_SID,"Status",lul_device),10)
 		local llStatus = tonumber(luup.variable_get(DIMMER_SID,"LoadLevelStatus",lul_device),10)
 		local isOff = (llStatus == 0) and true or false
-		luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) swStatus ["..(swStatus or "NIL").."] llStatus ["..(llStatus or "NIL").."] isOff ["..(isOff and "TRUE" or "FALSE").."].")
+		luup.log("("..PLUGIN.NAME.."::TPLINK::setColorTemp) swStatus ["..(swStatus or "NIL").."] llStatus ["..(llStatus or "NIL").."] isOff ["..(isOff and "TRUE" or "FALSE").."].",2)
 		local msg
 		
 		msg = string.format(self.commands['IOT.SMARTBULB']['color_temp'],colorTemp)
@@ -668,19 +818,23 @@ local TPLINK = {
 			msg = self.commands['IOT.SMARTBULB']['on']..","..msg..","..self.commands['IOT.SMARTBULB']['off']
 		end
 		msg = "{"..msg.."}"
+		debug("("..PLUGIN.NAME.."::TPLINK::setColor) McGhee msg: "..(msg or "NIL")..".")
+
+		local retry_count = 3
+
 		local err, resp = self:sendMessage(address, id, msg, retry_count)
 		if (not err) then
 			local status = self:parseStatusResponse(resp)
 			if (status ~= nil) then
-				luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Color Temperature of device with ID "..(id or "NIL").." set to: ["..(status.color_temp or "NIL").."]")
-				status.current_color = colorSpec
+				luup.log("("..PLUGIN.NAME.."::TPLINK::setColorTemp) Color Temperature of device with ID "..(id or "NIL").." set to: ["..(status.color_temp or "NIL").."]",2)
+				status.current_color = self:getColorSpec(colorTemp)
 				return status
 			else
-				luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Color Temperature change of device with ID "..(id or "NIL").." to: ["..(status.color_temp or "NIL").."] NOT VERIFIED")
+				luup.log("("..PLUGIN.NAME.."::TPLINK::setColorTemp) Color Temperature change of device with ID "..(id or "NIL").." to: ["..(status.color_temp or "NIL").."] NOT VERIFIED",1)
 				return nil
 			end
 		else
-			luup.log("("..PLUGIN.NAME.."::TPLINK::setColor) Error setting color temperature of device with ID "..(id or "NIL")..".")
+			luup.log("("..PLUGIN.NAME.."::TPLINK::setColorTemp) Error setting color temperature of device with ID "..(id or "NIL")..".",1)
 		end
 		return nil
 
@@ -710,10 +864,11 @@ local TPLINK = {
 		if (not err) then
 			local status = self:parseStatusResponse(resp)
 			if (status ~= nil) then
-				luup.log("("..PLUGIN.NAME.."::TPLINK::setLoadLevelTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").." - "..(status.brightness or "NIL").."%]")
+				luup.log("("..PLUGIN.NAME.."::TPLINK::setLoadLevelTarget) State of switch with ID "..(id or "NIL").." set to: ["..(status.powered and "ON" or "OFF").." - "..(status.brightness or "NIL").."%]")
 				return status
 			else
-				luup.log("("..PLUGIN.NAME.."::TPLINK::setLoadLevelTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").."]")
+--				luup.log("("..PLUGIN.NAME.."::TPLINK::setLoadLevelTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").."]")
+				luup.log("("..PLUGIN.NAME.."::TPLINK::setLoadLevelTarget) State of switch with ID "..(id or "NIL").." set to: ["..(status.powered and "ON" or "OFF").." - "..(status.brightness or "NIL").."%]")
 				return nil
 			end
 		else
@@ -726,14 +881,18 @@ local TPLINK = {
 	setTarget = function(self,deviceConfig,on)
 		local address = deviceConfig.IP
 		local id = deviceConfig.ID
+		luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) McGhee deviceConfig: [\n"..print_r(deviceConfig).."\n]")
+		local devType = (deviceConfig.system.get_sysinfo.mic_type or deviceConfig.system.get_sysinfo.type)
+		luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) McGhee TYPE: "..(devType or 'nul')..".")
 		luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) Called setTarget("..(address or "nil")..",\""..(id or "nil").."\","..(on and "true" or "false")..").")
 
 		local msg
---		if (deviceConfig.TYPE == "IOT.SMARTPLUGSWITCH") then
+		if (devType == "IOT.SMARTPLUGSWITCH") then
 			msg = "{"..(on and self.commands['IOT.SMARTPLUGSWITCH']['on'] or self.commands['IOT.SMARTPLUGSWITCH']['off']).."}"
---		else
---			msg = "{"..(on and self.commands['IOT.SMARTBULB']['on'] or self.commands['IOT.SMARTBULB']['off']).."}"
---		end
+		else
+			msg = "{"..(on and self.commands['IOT.SMARTBULB']['on'] or self.commands['IOT.SMARTBULB']['off']).."}"
+		end
+		luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) McGhee TYPE: "..devType..", msg: "..msg..".")
 		local retry_count = 3
 
 		local err, resp = self:sendMessage(address, id, msg, retry_count)
@@ -741,10 +900,10 @@ local TPLINK = {
 		if (not err) then
 			local status = self:parseStatusResponse(resp)
 			if (status ~= nil) then
-				luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").."]")
+				luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..(status.powered and "ON" or "OFF").."]")
 				return status
 			else
-				luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").."]")
+				luup.log("("..PLUGIN.NAME.."::TPLINK::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..(status.powered and "ON" or "OFF").."]")
 				return nil
 			end
 		else
@@ -757,13 +916,13 @@ local TPLINK = {
 		local address = deviceConfig.IP
 		local id = deviceConfig.ID
 		luup.log("("..PLUGIN.NAME.."::TPLINK::getStatus) Called getStatus("..(address or "nil")..",\""..(id or "nil").."\").")
-		local status = false
+--		local status = {}
 		local msg = "{"..self.commands['info'].."}"
 		local retry_count = 3
 		local err, resp = self:sendMessage(address, id, msg, retry_count)
 		if (err == false) then
 			local status = self:parseStatusResponse(resp)
-			luup.log("("..PLUGIN.NAME.."::TPLINK::getStatus) Status of switch with ID "..(id or "NIL").." is: ["..((status.powered == true) and "ON" or "OFF").."]")
+			luup.log("("..PLUGIN.NAME.."::TPLINK::getStatus) Status of switch with ID "..(id or "NIL").." is: ["..(status.powered  and "ON" or "OFF").."]")
 			return status
 		else
 			luup.log("("..PLUGIN.NAME.."::TPLINK::getStatus) Error getting status of switch with ID "..(id or "NIL")..".")
@@ -776,14 +935,16 @@ local TPLINK = {
 
 local SENGLED = {
 
-	parseStatusResponse = function(self,packet)
-		local sArray = {}
-		local STATUS = tonumber(packet:byte(28),10)
-		STATUS = tonumber(STATUS,10)
-		sArray.powered = (STATUS > 0) and true or false
-		sArray.brightness = STATUS
-		return sArray
-	end,
+--	parseStatusResponse = function(self,packet)
+--		local sArray = {}
+--		local STATUS = tonumber(packet:byte(28),10)
+--		STATUS = tonumber(STATUS,10)
+--		sArray.powered = (STATUS > 0) and true or false
+--		sArray.brightness = STATUS
+--		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) McGhee packet: ["..hex_dump(packet),2)
+--		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) powered: "..(bool2string(sArray.powered) or "nil")..", brightness: "..(sArray.brightness or "nil")..".", 2)
+--		return sArray
+--	end,
 
 	parseDiscoveryPacket = function (self,packet,packet_ip,packet_port)
 		local Device = {}
@@ -793,6 +954,7 @@ local SENGLED = {
 		Device.PORT = packet_port
 		Device.PROTOCOL = "SENGLED"
 		Device.TYPE = "IOT.SMARTBULB"
+		debug("("..PLUGIN.NAME.."::SENGLED::parseDiscoveryPacket) Device.TYPE: "..(Device.TYPE or "nil")..".", 2)
 		return Device
 	end,
 
@@ -868,17 +1030,39 @@ local SENGLED = {
 		return true, nil
 	end,
 
-	sendUDP = function(self, deviceConfig, code, retry_count)
-		local ipaddr = deviceConfig.IP
-		local ipport = deviceConfig.PORT
-		local socket = require("socket")
-		local udp = assert(socket.udp())
-		assert(udp:setsockname("*",9060))
-		assert(udp:sendto(code, ipaddr, ipport))
-    udp:close()
-  end,
+	sendMessage = function(self, address, msg, retry_count)
+		luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) Called sendMessage("..(address or "nil")..", "..(hex_dump(msg) or "nil")..","..(retry_count or "nil")..").")
+		if ((retry_count == nil) or (retry_count == 0)) then retry_count = 1 end
+		local resp
+--		local resp_ip
+--		local resp_port
+		repeat
+			local socket = require("socket")
+			local udp = assert(socket.udp())
+			udp:settimeout(1)
+			assert(udp:setsockname("*",9060))
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)    Sending command...")
+			assert(udp:sendto(msg, address, 9060))
+--			assert(udp:sendto(self:encodePacket(msg), address, 9999))
+			resp = udp:receive()
+--			resp, resp_ip, resp_port = udp:receivefrom()
+			udp:close()
+			retry_count = retry_count - 1
+		until ( (retry_count == 0) or ((resp ~= nil) and (#resp > 0)))
+--		if ((resp ~= nil) and (resp ~= "")) then
+		if ((resp ~= nil) and (#resp > 0)) then
+--			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) resp_ip:"..(resp_ip or "nil")..", resp_port:"..(resp_port or "nil")..", resp:"..(hex_dump(resp) or "nil")..".")
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)   Sent command.",1)
+			return false, resp
+		else
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)   Send command failed.",1)
+		end
+		return true, nil
+	end,
   
 	setLoadLevelTarget = function(self, deviceConfig, newlevel)
+		debug("("..PLUGIN.NAME.."::SENGLED::setLoadLevelTarget) newlevel: "..(newlevel or "nil")..", deviceConfig: ["..print_r(deviceConfig),2)
+		local veraId = deviceConfig.VERA_ID
 		local address = deviceConfig.IP
 		local port = deviceConfig.PORT
 		veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
@@ -887,47 +1071,97 @@ local SENGLED = {
 		local llstatus = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_device)
 		local level = tonumber(newlevel,10)
 		if level > 100 then level = 100 end
-		if 0 > level then level = 0 end
+		if level < 0 then level = 0 end
 
+		debug("("..PLUGIN.NAME.."::SENGLED::setLoadLevelTarget) McGhee level: "..(level or "nil")..".", 2)
+		--
+		--  create and send Set Target msg
+		--
 		local sCommand = string.char(0x0d,0x00,0x02,0x00,0x01)
-			-- set the ip addresses
-		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)
+		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)	-- set the ip addresses
 		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
 		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)
 		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
 		sCommand = sCommand .. string.char(0x01,0x00,0x01,0x00,0x00,0x00)
-		sCommand = sCommand .. string.char(level,0xe4)
+		sCommand = sCommand .. string.char(level,0x64)
 
-    self:sendUDP(deviceConfig,sCommand)
-		return level
+		self:sendMessage(address, sCommand)
+		luup.log("("..PLUGIN.NAME.."::SENGLED::setLoadTarget) McGhee Setting load target for "..(address or 'nil')..".")
+		
+		luup.variable_set(DIMMER_SID, "LoadLevelStatus", newlevel, veraId)
+		luup.variable_set(DIMMER_SID, "LoadLevelTarget", newlevel, veraId)
+		if (newlevel == 0) then
+			luup.variable_set(SWITCH_SID, "Status", 0, veraId)
+			luup.variable_set(SWITCH_SID, "Target", 0, veraId)
+		else
+			luup.variable_set(SWITCH_SID, "Status", 1, veraId)
+			luup.variable_set(SWITCH_SID, "Target", 1, veraId)
+		end
+
+		return (self:getStatus(deviceConfig))
 	end,
 
-  setTarget = function(self, deviceConfig, target)
-    local level
-    if target == "0" then
-       level = 0
-    else
-      level = 100
-    end
-    self:setLoadLevelTarget(deviceConfig,level)
-  end,
+  	setTarget = function(self, deviceConfig, target)
+		local level
+		if (target) then
+			level = 100
+		else
+			level = 0
+		end
+		debug("("..PLUGIN.NAME.."::SENGLED::setTarget) McGhee target: "..bool2string(target or "nil")..", level: "..(level or "nil")..".", 2)
+		return self:setLoadLevelTarget(deviceConfig, level)
+--		return (self:getStatus(deviceConfig))
+	end,
 
-  getStatus = function(self, deviceConfig)
-  	local status = {}
-  	local lul_device = deviceConfig.VERA_IP
-		local llstatus = luup.variable_get(DIMMER_SID,"LoadLevelStatus",lul_device)
-  	llstatus = tonumber(llstatus,10)
-  	if (llstatus) then
- 			status.powered = (llstatus > 0) and true or false
- 			status.brightness = llstatus
- 		else
- 			status.powered = false
-	 		status.brightness = 0
- 		end
+	getStatus = function(self, deviceConfig)
+		debug("("..PLUGIN.NAME.."::SENGLED::getStatus) McGhee deviceConfig: ["..print_r(deviceConfig).."]", 1)
+		local status = {}
+		local lul_device = deviceConfig.VERA_ID
+		local address = deviceConfig.IP
+--		veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
+--		lightIP1, lightIP2, lightIP3, lightIP4 = string.match(address,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
+		--
+		--  create and send Set Target msg
+		--
+--		local sCommand = string.char(0x0d,0x00,0x02,0x00,0x01)
+--		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)		-- set the ip addresses
+--		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
+--		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)
+--		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
+--		sCommand = sCommand .. string.char(0x01,0x00,0x01,0x00,0x00,0x00)
+--		sCommand = sCommand .. string.char(0x64,0x64)
+
+--		local err, resp = self:sendMessage(address, sCommand, retry_count)
+--		luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) err: "..(err or "NIL")..".")
+--		if (not err) then
+----			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus)   resp: ["..(print_r(resp) or "NIL").."]")
+--			local status = self:parseStatusResponse(resp)
+--			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Status of switch with address "..(address or "NIL").." is: "..(status.powered  and "ON" or "OFF")..".")
+--			return status
+--		else
+--			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Error getting status of switch with address "..(address or "NIL")..".")
+--		end
+--		return nil
+--		self:sendMessage(address, sCommand)
+		luup.log("("..PLUGIN.NAME.."::SENGLED::setLoadTarget) McGhee Getting load target for "..(address or 'nil')..".")
+		local llstatus = luup.variable_get(DIMMER_SID,"LoadLevelTarget",lul_device)
+		local target = luup.variable_get(DIMMER_SID,"Target",lul_device)
+		debug("("..PLUGIN.NAME.."::SENGLED::getStatus) McGhee lul_device: "..(lul_device or "nil")..", llstatus: "..(llstatus or "nil")..".", 2)
+		llstatus = tonumber(llstatus,10)
+		if (llstatus ~= nil) then
+			status.powered = toBool(llstatus)
+			status.brightness = tonumber(llstatus)
+--			status.powered = target
+--			status.brightness = llstatus
+		else
+			status.powered = false
+			status.brightness = 0
+		end
+		debug("("..PLUGIN.NAME.."::SENGLED::getStatus) McGhee powered: "..bool2string(status.powered)..", brightness: "..(status.brightness or "nil")..".", 2)
+
 		return status
-  end
+	end
 }
-
 
 local EcoSwitch = {
 
@@ -1137,10 +1371,10 @@ local EcoSwitch = {
 		if (not err) then
 			local status = self:getStatus(deviceConfig)
 			if (status ~= nil) then
-				luup.log("("..PLUGIN.NAME.."::EcoSwitch::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").."]")
+				luup.log("("..PLUGIN.NAME.."::EcoSwitch::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..(status.powered and "ON" or "OFF").."]")
 				return status
 			else
-				luup.log("("..PLUGIN.NAME.."::EcoSwitch::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..((status.powered == true)and "ON" or "OFF").."]")
+				luup.log("("..PLUGIN.NAME.."::EcoSwitch::setTarget) State of switch with ID "..(id or "NIL").." set to: ["..(status.powered and "ON" or "OFF").."]")
 				return nil
 			end
 		else
@@ -1173,7 +1407,7 @@ local EcoSwitch = {
 		local err, resp = self:sendMessage(address, id, msg, retry_count)
 		if (err == false) then
 			local status = self:readState(resp)
-			luup.log("("..PLUGIN.NAME.."::EcoSwitch::getStatus) Status of switch with ID "..(id or "NIL").." is: ["..((status.powered == true)and "ON" or "OFF").."]")
+			luup.log("("..PLUGIN.NAME.."::EcoSwitch::getStatus) Status of switch with ID "..(id or "NIL").." is: ["..(status.powered and "ON" or "OFF").."]")
 			return status
 		else
 			luup.log("("..PLUGIN.NAME.."::EcoSwitch::getStatus) Error getting status of switch with ID "..(id or "NIL")..".")
@@ -1209,8 +1443,9 @@ function PollSwitchs()
 				else
 					luup.variable_set(DIMMER_SID,"LoadLevelStatus",0,vera_id)
 				end
+				luup.log("("..PLUGIN.NAME.."::PollSwitchs)     Setting LoadLevelStatus for device ["..(vera_id or "NIL").."].",2)
 			end
-			luup.log("("..PLUGIN.NAME.."::PollSwitchs)     Setting STATUS for device ["..(vera_id or "NIL").."].",2)
+			luup.log("("..PLUGIN.NAME.."::PollSwitchs)     Setting Status for device ["..(vera_id or "NIL").."].",2)
 		end
 	end
 	luup.call_delay("PollSwitchs",PLUGIN.PollPeriod,"")
@@ -1264,7 +1499,9 @@ function UPNP_AddDevice(lul_device,lul_settings)
 			luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   PROTOCOL   [TPLINK].",2)
 			if (v.TYPE == "IOT.SMARTBULB") then
 				luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   TYPE       [IOT.SMARTBULB].",2)
-				if (v.system.get_sysinfo.is_color) then
+				debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee sysinfo.is_color: "..bool2string(toBool(v.system.get_sysinfo.is_color))..".",2)
+				if (toBool(v.system.get_sysinfo.is_color)) then
+					debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee is_color",2)
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableRGBLight1.xml].",2)
 					luup.chdev.append(
 						ECO_GATEWAY_DEVICE, 
@@ -1277,7 +1514,8 @@ function UPNP_AddDevice(lul_device,lul_settings)
 						parameters,
 						false
 					)
-				elseif (v.system.get_sysinfo.is_variable_color_temp) then
+				elseif (toBool(v.system.get_sysinfo.is_variable_color_temp)) then
+					debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee is_variable_color_temp",2)
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableRGBLight2.xml].",2)
 					luup.chdev.append(
 						ECO_GATEWAY_DEVICE, 
@@ -1290,7 +1528,8 @@ function UPNP_AddDevice(lul_device,lul_settings)
 						parameters,
 						false
 					)
-				elseif (v.system.get_sysinfo.is_dimmable) then
+				elseif (toBool(v.system.get_sysinfo.is_dimmable)) then
+					debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee is_dimmable",2)
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableLight1.xml].",2)
 					luup.chdev.append(
 						ECO_GATEWAY_DEVICE, 
@@ -1339,6 +1578,40 @@ function UPNP_AddDevice(lul_device,lul_settings)
 	return 4,0
 end
 
+function UPNP_RenameDevice(lul_device,lul_settings)
+	luup.log("("..PLUGIN.NAME.."::UPNP_RenameDevice) Preparing to rename device.",2)
+	luup.log("("..PLUGIN.NAME.."::UPNP_RenameDevice) lul_settings ["..print_r(lul_settings).."].",2)
+	local DeviceData = json:decode(lul_settings.DeviceData)
+	debug("UPNP_RenameDevice - McGhee DeviceData:["..lul_settings.DeviceData.."].",2)
+	
+	local DeviceID = 0
+	local DevName = DeviceData.Name
+	local IP = DeviceData.IP
+	local ID = DeviceData.ID
+	local Service = lul_settings.serviceId
+	debug("UPNP_RenameDevice - McGhee Service:"..(Service or 'nil')..",Name:"..DevName..",IP:"..IP..",ID:"..ID..".",2)
+	for vera_id,dConfig in pairs(CONFIGURED_DEVICES) do
+
+		luup.log("("..PLUGIN.NAME.."::RenameDevice)   inspecting device ["..(vera_id or "NIL").."].",2)
+		local status
+		if (((dConfig.ID ~= "") and (dConfig.ID == ID)) and
+		   ((dConfig.IP ~= "") and (dConfig.IP == IP))) then
+			DeviceID = vera_id
+			debug("UPNP_RenameDevice - McGhee vera_id:"..DeviceID..", DeviceData:["..print_r(DeviceData).."].",2)
+			luup.variable_set(Service, "DeviceConfig", lul_settings.DeviceData, DeviceID)
+		end
+	end
+	local url = ("http://"..PLUGIN.VERA_IP..":3480/port_3480/data_request?id=device&action=rename&serviceId=urn:micasaverde-com:serviceId:HomeAutomationGateway1&device="..DeviceID.."&name="..URLEnclode(DevName))
+	debug("UPNP_RenameDevice - McGhee url:"..url..".",2)
+
+	local response, status = luup.inet.wget(url, 5, "", "")
+	debug("McGhee response="..tostring(response).." status="..tostring(status),2)
+	
+	luup.call_action("urn:micasaverde-com:serviceId:HomeAutomationGateway1", "Reload", {}, 0)
+
+	return 4,0
+end
+
 function UPNP_RemoveDevice(lul_device,lul_settings)
 	luup.log("("..PLUGIN.NAME.."::UPNP_RemoveDevice) Preparing to remove device.",2)
 	luup.log("("..PLUGIN.NAME.."::UPNP_RemoveDevice) lul_settings ["..print_r(lul_settings).."].",2)
@@ -1371,7 +1644,7 @@ function UPNP_SetColorRGB(lul_device,lul_settings)
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorRGB) ECO Switch devices are not Color capable devices.",1)
 		return 2,nil
 	elseif (deviceConfig.PROTOCOL == "TPLINK") then
-		if (tonumber(deviceConfig.system.get_sysinfo.is_color,10) == 1) then
+		if (toBool(deviceConfig.system.get_sysinfo.is_color)) then
 			resp = TPLINK:setColorRGB(deviceConfig, TARGETval)
 		else
 			luup.log("("..PLUGIN.NAME.."::ACTION::SetColorRGB) Device is not Color capable.\ndevice: "..print_r(deviceConfig),1)
@@ -1414,7 +1687,7 @@ function UPNP_SetColor(lul_device,lul_settings)
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColor) ECO Switch devices are not Color Temperature capable devices.",1)
 		return 2,nil
 	elseif (deviceConfig.PROTOCOL == "TPLINK") then
-		if ((tonumber(deviceConfig.is_tunable,10) == 1) or (tonumber(deviceConfig.system.get_sysinfo.is_variable_color_temp,10) == 1)) then
+		if ((toBool(deviceConfig.is_tunable)) or (toBool(deviceConfig.system.get_sysinfo.is_variable_color_temp))) then
 			resp = TPLINK:setColor(deviceConfig, TARGETval)
 		else
 			luup.log("("..PLUGIN.NAME.."::ACTION::SetColor) Device is not Color Temperature capable.\ndevice: "..print_r(deviceConfig),1)
@@ -1425,10 +1698,54 @@ function UPNP_SetColor(lul_device,lul_settings)
 		return 2,nil
 	end
 	if (resp ~= nil) then
-		luup.variable_set(COLOR_SID, "CurrentColor", resp.current_color, lul_device)
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColor) Set Color Temperature to "..(resp.color_temp or "NIL").."]")
+		luup.variable_set(COLOR_SID, "CurrentColor", resp.color_temp, lul_device)
 	else
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColor) ERROR: Color Temperature change not verified for device ["..(deviceConfig.ID).."]")
+		return 2,nil
+	end
+	return 4,nil
+end
+
+function UPNP_SetColorTemp(lul_device,lul_settings)
+	luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) McGhee ")
+	if (lul_settings and lul_settings.DeviceNum) then
+		lul_device = tonumber(lul_settings.DeviceNum)
+	end
+	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	if (deviceConfig == nil) then
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) DEVICE not configured")
+		return 2,nil
+	end
+	luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) McGhee deviceConfig: ["..(print_r(deviceConfig)).."]")
+	deviceConfig.VERA_ID = lul_device
+	if ((deviceConfig.IP == nil) or (deviceConfig.IP == "")) then
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) IP ADDRESS not configured")
+		return 2,nil
+	end
+	local TARGETval = lul_settings.newColorTempTarget
+	luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) Setting device color to ["..(TARGETval or "NIL").."]")
+	-- luup.variable_set(SWITCH_SID, "Target", lul_settings.newTargetValue, lul_device)
+	local resp
+	if ((deviceConfig.PROTOCOL == "") or(deviceConfig.PROTOCOL == "ECO_SWITCH")) then
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) ECO Switch devices are not Color Temperature capable devices.",1)
+		return 2,nil
+	elseif (deviceConfig.PROTOCOL == "TPLINK") then
+		if ((toBool(deviceConfig.is_tunable)) or (toBool(deviceConfig.system.get_sysinfo.is_variable_color_temp))) then
+			resp = TPLINK:setColorTemp(deviceConfig, TARGETval)
+		else
+			luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) Device is not Color Temperature capable.\ndevice: "..print_r(deviceConfig),1)
+			return 2,nil
+		end
+	elseif (deviceConfig.PROTOCOL == "SENGLED") then
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) SengLED Boost are not Color Temperature capable devices.",1)
+		return 2,nil
+	end
+	if (resp ~= nil) then
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) Set Color Temperature to "..(resp.color_temp or "NIL").."]")
+		luup.variable_set(COLOR_SID, "SetColorTemp", resp.color_temp, lul_device)
+	else
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) ERROR: Color Temperature change not verified for device ["..(deviceConfig.ID).."]")
 		return 2,nil
 	end
 	return 4,nil
@@ -1461,8 +1778,9 @@ function UPNP_SetTarget(lul_device,lul_settings)
 		resp = SENGLED:setTarget(deviceConfig, TARGETval)
 	end
 	if (resp ~= nil) then
-		luup.variable_set(SWITCH_SID, "Status", (resp.powered and 1 or 0), lul_device)
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) Set state to "..(resp.powered and "ON" or "OFF").."]")
+		luup.variable_set(SWITCH_SID, "Status", (resp.powered and 1 or 0), lul_device)
+		luup.variable_set(DIMMER_SID, "LoadLevelStatus", resp.powered and resp.brightness or 0, lul_device)
 	else
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) ERROR: State not set for device ["..(deviceConfig.ID).."]")
 		return 2,nil
@@ -1526,6 +1844,7 @@ function UPNP_SetLoadLevelTarget(lul_device,lul_settings)
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetLoadLevelTarget) ECO Switches are not dimming capable.",1)
 		return 2,nil
 	elseif (deviceConfig.PROTOCOL == "TPLINK") then
+		debug("("..PLUGIN.NAME.."::ACTION::SetLoadLevelTarget) McGhee type: ["..deviceConfig.TYPE.."]")
 		if (deviceConfig.TYPE ~= "IOT.SMARTBULB") then
 			luup.log("("..PLUGIN.NAME.."::ACTION::SetLoadLevelTarget) TPLINK Switches are not dimming capable.",1)
 			return 2,nil
@@ -1537,9 +1856,10 @@ function UPNP_SetLoadLevelTarget(lul_device,lul_settings)
 	end
 	if (resp ~= nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetLoadLevelTarget) RESP - status\n"..print_r(resp))
-		luup.variable_set(SWITCH_SID, "Status", resp.powered, lul_device)
-		luup.variable_set(DIMMER_SID, "LoadLevelStatus", (resp.powered == true) and resp.brightness or 0, lul_device)
-		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) Set LoadLevelTarget to "..((resp.powered == true) and resp.brightness or 0).."]")
+		luup.variable_set(SWITCH_SID, "Status", (resp.powered and 1 or 0), lul_device)
+--		luup.variable_set(SWITCH_SID, "Status", resp.powered, lul_device)
+		luup.variable_set(DIMMER_SID, "LoadLevelStatus", resp.powered and resp.brightness or 0, lul_device)
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) Set LoadLevelTarget to "..(resp.powered and resp.brightness or 0).."]")
 	else
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) ERROR: LoadLevelTarget not set for device ["..(deviceConfig.ID).."]")
 		return 2,nil
@@ -1596,7 +1916,7 @@ function initChild(vera_id)
 		if (status ~= nil) then
 			luup.variable_set(SWITCH_SID,"Status",(status.powered and 1 or 0),vera_id)
 			if (status.brightness) then
-				luup.variable_set(DIMMER_SID,"LoadLevelStatus",((status.powered == true) and status.brightness or 0),vera_id)
+				luup.variable_set(DIMMER_SID,"LoadLevelStatus",(status.powered and status.brightness or 0),vera_id)
 			end
 			set_failure(0, vera_id)
 			luup.log("("..PLUGIN.NAME.."::initChild) retrieved initial device status.",2)
