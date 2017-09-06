@@ -1,4 +1,13 @@
 /*
+ * WiFi UDP Switch Controller (formerly ECO Switch)
+ * Version 2.0
+ * Plugin for 	ECO Wifi Controlled Outlet, 
+ * 		TP-LINK Wi-Fi Smart Plug and bulbs, and
+ * 		SENGLED Boost bulb/extenders
+ * by CYBRMAGE, Modified by Jim McGhee
+ * Copyright (C) 2009-2017
+ *
+ * Derived from:
  * Plugin for Belkin WeMo
  * Copyright (C) 2009-2011 Deborah Pickett
 
@@ -47,20 +56,20 @@ function configuration(device)
 	var foundHtml = '';
 	var dynamicCount = 0;
 	childHtml += '<div style="border: black 1px solid; padding: 5px; margin: 5px;">';
-	childHtml += '<div style="font-weight: bold; text-align: center;">Configured ECO_Switch devices</div>';
+	childHtml += '<div style="font-weight: bold; text-align: center;">Configured devices</div>';
 	childHtml += '<table width="100%"><thead><th>Name&#xA0;</th><th>ID</th><th>IP&#xA0;Address</th><th>Action</th></thead>';
 	var i;
-	for (var devIdx in childDevices)
+	for (var ndxChildDev in childDevices)
 	{
 		// Find the child in the device list (requires exhaustive search).
-		var childName = childDevices[devIdx].Name;
-		var childID = childDevices[devIdx].ID;
-		var childIP = childDevices[devIdx].IP;
+		var childName = childDevices[ndxChildDev].Name;
+		var childID = childDevices[ndxChildDev].ID;
+		var childIP = childDevices[ndxChildDev].IP;
 		childHtml += '<tr>';
 		childHtml += '<td>' + EscapeHtml(childName) + '</td>';
 		childHtml += '<td>' + EscapeHtml(childID) + '</td>';
 		childHtml += '<td>' + EscapeHtml(childIP) + '</td>';
-		childHtml += '<td><input type="button" value="Remove" onClick="configurationRemoveChildDevice(' + device + ',' + devIdx + ',this)"/></td>';
+		childHtml += '<td><input type="button" value="Remove" onClick="configurationRemoveChildDevice(' + device + ',' + ndxChildDev + ',this)"/></td>';
 		childHtml += '</tr>';
 		actualChildDevices++;
 	}
@@ -69,22 +78,27 @@ function configuration(device)
 	if (actualChildDevices) { html += childHtml; }
 
 	// display discovered devices on the network. 
-	foundHtml += '<div style="border: black 1px solid; padding: 5px; margin: 5px;">';
+	var unknownDevices = JSON.parse(get_device_state(device, ECO_SID, "DISCOVERED_DEVICES", 1));
 
 	// List unknown devices as candidates to add.
-	var unknownDevices = JSON.parse(get_device_state(device, ECO_SID, "DISCOVERED_DEVICES", 1));
-	foundHtml += '<div style="font-weight: bold; text-align: center;">Discovered ECO_Switch devices</div>';
-	foundHtml += '<table id="wemo_scanResults" width="100%"><thead><th>Name&#xA0;</th><th>ID</th><th>IP&#xA0;Address</th><th>Action</th></thead>';
+	foundHtml += '<div style="border: black 1px solid; padding: 5px; margin: 5px;">';
+	foundHtml += '<div style="font-weight: bold; text-align: center;">Unconfigured/Renamed devices</div>';
+	foundHtml += '<table width="100%"><thead><th>Name&#xA0;</th><th>ID</th><th>IP&#xA0;Address</th><th>Action</th></thead>';
+//	foundHtml += '<table id="wemo_scanResults" width="100%"><thead><th>Name&#xA0;</th><th>ID</th><th>IP&#xA0;Address</th><th>Action</th></thead>';
 	var i;
-	for (var devIdx in unknownDevices)
+	for (var ndxUnknownDev in unknownDevices)
 	{
-		var unknownDeviceName = unknownDevices[devIdx].Name;
-		var unknownDeviceID = unknownDevices[devIdx].ID;
-		var unknownDeviceIP = unknownDevices[devIdx].IP;
+		var unknownDeviceName = unknownDevices[ndxUnknownDev].Name;
+		var unknownDeviceID = unknownDevices[ndxUnknownDev].ID;
+		var unknownDeviceIP = unknownDevices[ndxUnknownDev].IP;
 		var dConfigured = false;
-		for (var devI in childDevices)
+		var SavedChildNdx = -1;
+
+		for (var ndxChildDev in childDevices)
 		{
-			if ((childDevices[devI].Name == unknownDeviceName) && (childDevices[devI].ID == unknownDeviceID) && (childDevices[devI].IP == unknownDeviceIP)) {
+			if ((childDevices[ndxChildDev].Name == unknownDeviceName) && 
+					(childDevices[ndxChildDev].ID == unknownDeviceID) && 
+					(childDevices[ndxChildDev].IP == unknownDeviceIP)) {
 				dConfigured = true;
 				break;
 			}
@@ -92,19 +106,44 @@ function configuration(device)
 		if (dConfigured) {
 			continue;
 		}
+		// If we get here and the ID and IP are the same, this must have been renamed
+		for (var ndxChildDev in childDevices)
+		{
+			if ((childDevices[ndxChildDev].ID == unknownDeviceID) && 
+			    (childDevices[ndxChildDev].IP == unknownDeviceIP)) {
+				SavedChildNdx = ndxChildDev;
+				break;
+			}
+		}
 		foundHtml += '<tr>';
-		foundHtml += '<td>' + EscapeHtml(unknownDeviceName) + '</td>';
+		if (SavedChildNdx == -1) {	// Add
+			foundHtml += '<td>' + EscapeHtml(unknownDeviceName) + '</td>';
+		} else {			// Rename
+			foundHtml += '<td>' + EscapeHtml(unknownDeviceName) + " / " + EscapeHtml(childDevices[SavedChildNdx].Name) + '</td>';
+//			alert("Reached:" + unknownDeviceName + " / " + childDevices[SavedChildNdx].Name);
+		}
 		foundHtml += '<td>' + EscapeHtml(unknownDeviceID) + '</td>';
 		foundHtml += '<td>' + EscapeHtml(unknownDeviceIP) + '</td>';
 		foundHtml += '<td>';
-		foundHtml += '<input type="button" value="Add" onClick="configurationAddFoundDevice('
-		 + device + ',' + devIdx + ',this)"/></td>';
+		if (SavedChildNdx == -1) {
+			// Add
+			foundHtml += '<input type="button" value="Add" onClick="configurationAddFoundDevice('
+			   + device + ',' + ndxUnknownDev + ',this)"/></td>';
+//			alert ('<input type="button" value="Add" onClick="configurationAddFoundDevice('
+//			   + device + ',' + ndxUnknownDev + ',this)"/></td>');
+		} else {
+			// Rename
+			foundHtml += '<input type="button" value="Rename" onClick="configurationRenameChildDevice('
+			   + device + ',' + ndxUnknownDev + ',this)"/></td>';
+//			alert ('<input type="button" value="Rename" onClick="configurationRenameChildDevice('
+//			   + device + ',' + ndxUnknownDev + ',this)"/></td>');
+		}
 		foundHtml += '</tr>';
 		actualFoundDevices++;
 	}
 	foundHtml += '</table>';
 
-	html += '</div>';
+	foundHtml += '</div>';
 	if (actualFoundDevices) { html += foundHtml; }
 
 
@@ -114,6 +153,7 @@ function configuration(device)
 // Remove an existing device.
 function configurationRemoveChildDevice(device, index, button)
 {
+//	alert("Beginning of configurationRemoveChildDevice");
 	var btn = jQuery(button);
 	btn.attr('disabled', 'disabled')
 	jQuery(':button').attr('disabled', 'disabled');
@@ -123,16 +163,37 @@ function configurationRemoveChildDevice(device, index, button)
 	var DeviceToRemove = configuredDevices[index];
 
 	var removeUrl = '/port_3480/data_request?id=lu_action&action=RemoveConfiguredDevice&DeviceNum='+device+'&serviceId='+ECO_SID+'&DeviceData='+JSON.stringify(DeviceToRemove);
-//alert("removeUrl:"+removeUrl);
+//	alert("removeUrl:"+removeUrl);
 	jQuery.get(removeUrl);
 
 	btn.val("Removing");
 	jQuery('#eco_refresh').show();
 }
 
+// Rename an existing device.
+//function configurationRenameChildDevice(device, ndxUnknownDev, newName, button)
+function configurationRenameChildDevice(device, ndxUnknownDev, button)
+{
+//	alert("Beginning of configurationRenameChildDevice - ");
+	var btn = jQuery(button);
+	btn.attr('disabled', 'disabled');
+	jQuery(':button').attr('disabled', 'disabled');
+	
+	var unknownDevices = JSON.parse(get_device_state(device, ECO_SID, "DISCOVERED_DEVICES", 1));
+	var DeviceToRenameTo = unknownDevices[ndxUnknownDev];
+
+	var renameUrl = '/port_3480/data_request?id=lu_action&action=RenameConfiguredDevice&DeviceNum='+device+'&serviceId='+ECO_SID+'&DeviceData='+JSON.stringify(DeviceToRenameTo);
+//	alert("renameUrl:"+renameUrl);
+	jQuery.get(renameUrl);
+
+	btn.val("Renaming");
+	jQuery('#eco_refresh').show();
+}
+
 // Add a found device.
 function configurationAddFoundDevice(device, index, button)
 {
+//	alert("Beginning of configurationAddFoundDevice");
 	var btn = jQuery(button);
 	btn.parent('input').attr('disabled', 'disabled');
 //	$(':button').prop('disabled', true); 
@@ -142,7 +203,7 @@ function configurationAddFoundDevice(device, index, button)
 	var DeviceToAdd = unknownDevices[index];
 
 	var addUrl = '/port_3480/data_request?id=lu_action&action=AddDiscoveredDevice&DeviceNum='+device+'&serviceId='+ECO_SID+'&DeviceData='+JSON.stringify(DeviceToAdd);
-//alert("addUrl:"+addUrl);
+//	alert("addUrl:"+addUrl);
 	jQuery.get(addUrl);
 
 	btn.val("Adding");
