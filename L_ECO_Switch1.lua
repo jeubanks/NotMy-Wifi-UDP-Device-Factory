@@ -988,7 +988,7 @@ local SENGLED = {
 				resp, resp_ip, resp_port = udp:receivefrom()
 				if (resp and (#resp > 0)) then
 					if (resp_ip ~= PLUGIN.VERA_IP) then
-						luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery)    Received response from ["..(resp_ip or "NIL")..":"..(resp_port or "NIL").."]...")
+						luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery)    Received response from "..(resp_ip or "NIL")..":"..(resp_port or "NIL")..", \n   resp: ["..hex_dump(resp).."]...", 2)
 						table.insertSet(DISCOVERED,self:parseDiscoveryPacket(resp,resp_ip,resp_port))
 					end
 				end
@@ -1867,22 +1867,24 @@ function UPNP_SetLoadLevelTarget(lul_device,lul_settings)
 	return 4,nil
 end
     
--- scan the vera devices for installed plugin devices
+-- scan the vera devices for installed plugin devices (Children of ECO_GATEWAY_DEVICE)
+-- Build the CONFIGURED_DEVICES table
 function findChildDevices()
 	CONFIGURED_DEVICES = {}
 	log("("..PLUGIN.NAME.."::findChildDevices): Processing child devices.",2)
 	-- mark installed devices in the VeraDevices table
-	for k,v in pairs(luup.devices) do
-		debug("("..PLUGIN.NAME.."::findChildDevices): testing device [\r\n"..(k or "NIL").." - "..print_r(v).."\r\n].")
-		if (v.device_num_parent == ECO_GATEWAY_DEVICE) then
+	for VeraID,CurDev in pairs(luup.devices) do
+		debug("("..PLUGIN.NAME.."::findChildDevices): testing device [\r\n"..(VeraID or "NIL").." - "..print_r(CurDev).."\r\n].")
+		if (CurDev.device_num_parent == ECO_GATEWAY_DEVICE) then
 			-- this is one of our devices
-			local devID = v.id
-			debug("("..PLUGIN.NAME.."::findChildDevices): Found Device ID ["..(devID or "NIL").."] VeraID ["..(k or "NIL").."].")
+			local devID = CurDev.id
+			debug("("..PLUGIN.NAME.."::findChildDevices): Found Device ID ["..(devID or "NIL").."] VeraID ["..(VeraID or "NIL").."].")
 			-- find the corresponding device in the VeraDevices table
 			if ((devID ~= nil) and (devID ~= "")) then
-				local dConfig = luup.variable_get(ECO_SID,"DeviceConfig",k)
-				CONFIGURED_DEVICES[k] = json:decode(dConfig)
-				CONFIGURED_DEVICES[k].VERA_ID = k
+				local dConfig = luup.variable_get(ECO_SID,"DeviceConfig",VeraID)
+				CONFIGURED_DEVICES[VeraID] = json:decode(dConfig)
+				CONFIGURED_DEVICES[VeraID].VERA_ID = VeraID
+				CONFIGURED_DEVICES[VeraID].Name = CurDev.description
 			end
 		end
 	end
