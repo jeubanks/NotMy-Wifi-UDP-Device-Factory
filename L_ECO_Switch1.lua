@@ -949,21 +949,28 @@ local SENGLED = {
 		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) NameEnd: "..(NameEnd or "nil")..".", 2)
 		sArray.Name = packet:sub(46, NameEnd - 1) 
 		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) Name: "..(sArray.Name or "nil")..".", 2)
+		sArray.ID = packet:sub(28, 28+16) 
 		sArray.brightness = tonumber(packet:byte(146), 10)
 		sArray.powered = (sArray.brightness ~= 0)
-		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) Name: "..(sArray.Name or "nil")..", brightness: "..(sArray.brightness or "nil")..", powered:"..(bool2string(sArray.powered) or "nil")..".", 2)
+		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) Name: "..(sArray.Name or "nil").."ID: "..(sArray.ID or "nil")..", brightness: "..(sArray.brightness or "nil")..", powered:"..(bool2string(sArray.powered) or "nil")..".", 2)
 		return sArray
 	end,
 
-	parseDiscoveryPacket = function (self,packet,packet_ip,packet_port)
+	parseDiscoveryPacket = function (self, packet_ip, packet_port)
 		local Device = {}
-		Device.ID = "BOOST_"..packet_ip
-		Device.Name = "BOOST_"..packet_ip
+		local deviceConfig = {}
+		
+		deviceConfig.VERA_ID = 0
+		deviceConfig.IP = packet_ip
+		local DevStat = (self:getStatus(deviceConfig))
+
+		Device.ID = DevStat.ID
+		Device.Name = DevStat.Name
 		Device.IP = packet_ip
 		Device.PORT = packet_port
 		Device.PROTOCOL = "SENGLED"
 		Device.TYPE = "IOT.SMARTBULB"
-		debug("("..PLUGIN.NAME.."::SENGLED::parseDiscoveryPacket) Device.TYPE: "..(Device.TYPE or "nil")..".", 2)
+		debug("("..PLUGIN.NAME.."::SENGLED::parseDiscoveryPacket) Discovered Device: "..(print_r(DevStat) or "nil")..".", 2)
 		return Device
 	end,
 
@@ -995,15 +1002,16 @@ local SENGLED = {
 			local rcv_retry = 4
 			repeat
 				resp, resp_ip, resp_port = udp:receivefrom()
-				if (resp and (#resp > 0)) then
-					if (resp_ip ~= PLUGIN.VERA_IP) then
-						luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery)    Received response from "..(resp_ip or "NIL")..":"..(resp_port or "NIL")..", \n   resp: ["..hex_dump(resp).."]...", 2)
-						table.insertSet(DISCOVERED,self:parseDiscoveryPacket(resp,resp_ip,resp_port))
-					end
-				end
+				luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery) udp:receivefrom got: "..(resp_ip or "NIL")..":"..(resp_port or "NIL")..", \n   resp: ["..hex_dump(resp).."]...", 2)
 				rcv_retry = rcv_retry - 1
-			until (rcv_retry == 0)
+			until ((rcv_retry == 0) or (resp and (#resp > 0) and (resp_ip ~= PLUGIN.VERA_IP)))
 			udp:close()
+			if (resp and (#resp > 0)) then
+				if (resp_ip ~= PLUGIN.VERA_IP) then
+					luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery)    Received response from "..(resp_ip or "NIL")..":"..(resp_port or "NIL")..", \n   resp: ["..hex_dump(resp).."]...", 2)
+					table.insertSet(DISCOVERED,self:parseDiscoveryPacket(resp_ip,resp_port))
+				end
+			end
 			retry_count = retry_count - 1
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
 		if (table.getn(DISCOVERED) == 1000) then
@@ -1131,7 +1139,7 @@ local SENGLED = {
 	getStatus = function(self, deviceConfig)
 		debug("("..PLUGIN.NAME.."::SENGLED::getStatus) McGhee deviceConfig: ["..print_r(deviceConfig).."]", 1)
 		local status = {}
-		local lul_device = deviceConfig.VERA_ID
+--		local lul_device = deviceConfig.VERA_ID
 		local address = deviceConfig.IP
 		veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
 		lightIP1, lightIP2, lightIP3, lightIP4 = string.match(address,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
