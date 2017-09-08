@@ -1435,11 +1435,14 @@ function PollSwitchs()
 			luup.log("("..PLUGIN.NAME.."::PollSwitchs)   Received STATUS for device ["..(vera_id or "NIL").."].\n"..print_r(status),2)
 			set_failure(0,vera_id)
 			luup.variable_set(SWITCH_SID,"Status",(status.powered and 1 or 0),vera_id)
+			luup.variable_set(SWITCH_SID,"Target",(status.powered and 1 or 0),vera_id)
 			if (status.brightness) then
 				if (status.powered) then
 					luup.variable_set(DIMMER_SID,"LoadLevelStatus",status.brightness,vera_id)
+					luup.variable_set(DIMMER_SID,"LoadLevelTarget",status.brightness,vera_id)
 				else
 					luup.variable_set(DIMMER_SID,"LoadLevelStatus",0,vera_id)
+					luup.variable_set(DIMMER_SID,"LoadLevelTarget",0,vera_id)
 				end
 				luup.log("("..PLUGIN.NAME.."::PollSwitchs)     Setting LoadLevelStatus for device ["..(vera_id or "NIL").."].",2)
 			end
