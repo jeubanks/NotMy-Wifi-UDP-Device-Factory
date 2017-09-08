@@ -334,13 +334,20 @@ function hex_dump(buf)
 	if (buf == nil) then return nil end
 	local outBuf = "\n"
 	for i=1,math.ceil(#buf/16) * 16 do
-		if (i-1) % 16 == 0 then outBuf = outBuf .. string.format('%08X  ', i-1) end
+		if (i-1) % 16 == 0 then 
+			outBuf = outBuf .. string.format('%08X  ', i-1) 
+		end
 		outBuf = outBuf .. ((i > #buf) and '   ' or string.format('%02X ', buf:byte(i)))
-		if ((i %  8) == 0) then outBuf = outBuf .. " " end
-		if ((i % 16) == 0) then outBuf = outBuf .. buf:sub(i-16+1, i):gsub("%c",".").."\n" end
+		if ((i %  8) == 0) then 
+			outBuf = outBuf .. " " 
+		end
+		if ((i % 16) == 0) then 
+			outBuf = outBuf .. buf:sub(i-16+1, i):gsub("%c","."):gsub("%W",".").."\n" 
+		end
 	end
 	return outBuf
 end
+
 
 function getLocalNet()
 	local sCmd = ""
@@ -704,7 +711,7 @@ local TPLINK = {
 			msg = self.commands['IOT.SMARTBULB']['on']..","..msg..","..self.commands['IOT.SMARTBULB']['off']
 		end
 		msg = "{"..msg.."}"
-		local err, resp = self:sendMessage(address, id, msg, retry_count)
+		local err, resp = self:sendMessage(address, id, msg, 3)
 		if (not err) then
 			local status = self:parseStatusResponse(resp)
 			if (status ~= nil) then
@@ -934,17 +941,19 @@ local TPLINK = {
 
 
 local SENGLED = {
-
---	parseStatusResponse = function(self,packet)
---		local sArray = {}
---		local STATUS = tonumber(packet:byte(28),10)
---		STATUS = tonumber(STATUS,10)
---		sArray.powered = (STATUS > 0) and true or false
---		sArray.brightness = STATUS
---		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) McGhee packet: ["..hex_dump(packet),2)
---		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) powered: "..(bool2string(sArray.powered) or "nil")..", brightness: "..(sArray.brightness or "nil")..".", 2)
---		return sArray
---	end,
+	-- XML startes at byte $46
+	parseStatusResponse = function(self, packet)
+		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) McGhee packet: ["..hex_dump(packet),2)
+		local sArray = {}
+		local NameEnd = packet:find("\0", 46)
+		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) NameEnd: "..(NameEnd or "nil")..".", 2)
+		sArray.Name = packet:sub(46, NameEnd - 1) 
+		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) Name: "..(sArray.Name or "nil")..".", 2)
+		sArray.brightness = tonumber(packet:byte(146), 10)
+		sArray.powered = (sArray.brightness ~= 0)
+		debug("("..PLUGIN.NAME.."::SENGLED::parseStatusResponse) Name: "..(sArray.Name or "nil")..", brightness: "..(sArray.brightness or "nil")..", powered:"..(bool2string(sArray.powered) or "nil")..".", 2)
+		return sArray
+	end,
 
 	parseDiscoveryPacket = function (self,packet,packet_ip,packet_port)
 		local Device = {}
@@ -1031,33 +1040,29 @@ local SENGLED = {
 	end,
 
 	sendMessage = function(self, address, msg, retry_count)
-		luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) Called sendMessage("..(address or "nil")..", "..(hex_dump(msg) or "nil")..","..(retry_count or "nil")..").")
+		luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) Called sendMessage("..(address or "nil")..", retry count:"..(retry_count or "nil")..").")
 		if ((retry_count == nil) or (retry_count == 0)) then retry_count = 1 end
 		local resp
---		local resp_ip
---		local resp_port
 		repeat
 			local socket = require("socket")
 			local udp = assert(socket.udp())
-			udp:settimeout(1)
-			assert(udp:setsockname("*",9060))
 			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)    Sending command...")
+			udp:settimeout(1)
+--			assert(udp:setsockname("*",9060))
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) setsockname returns:("..(udp:setsockname("*",9060) or "nil")..").")
 			assert(udp:sendto(msg, address, 9060))
---			assert(udp:sendto(self:encodePacket(msg), address, 9999))
 			resp = udp:receive()
---			resp, resp_ip, resp_port = udp:receivefrom()
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) resp:"..(resp or "nil")..".")
 			udp:close()
 			retry_count = retry_count - 1
 		until ( (retry_count == 0) or ((resp ~= nil) and (#resp > 0)))
---		if ((resp ~= nil) and (resp ~= "")) then
 		if ((resp ~= nil) and (#resp > 0)) then
---			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage) resp_ip:"..(resp_ip or "nil")..", resp_port:"..(resp_port or "nil")..", resp:"..(hex_dump(resp) or "nil")..".")
-			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)   Sent command.",1)
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)   Received Response.",1)
 			return false, resp
 		else
-			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)   Send command failed.",1)
+			luup.log("("..PLUGIN.NAME.."::SENGLED::sendMessage)   Recieve failed.",1)
 		end
-		return true, nil
+		return true, nil	-- all retries exausted
 	end,
   
 	setLoadLevelTarget = function(self, deviceConfig, newlevel)
@@ -1068,7 +1073,7 @@ local SENGLED = {
 		veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
 		lightIP1, lightIP2, lightIP3, lightIP4 = string.match(address,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
 
-		local llstatus = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_device)
+--		local llstatus = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_device)
 		local level = tonumber(newlevel,10)
 		if level > 100 then level = 100 end
 		if level < 0 then level = 0 end
@@ -1085,20 +1090,30 @@ local SENGLED = {
 		sCommand = sCommand .. string.char(0x01,0x00,0x01,0x00,0x00,0x00)
 		sCommand = sCommand .. string.char(level,0x64)
 
-		self:sendMessage(address, sCommand)
+		self:sendMessage(address, sCommand, 3)
 		luup.log("("..PLUGIN.NAME.."::SENGLED::setLoadTarget) McGhee Setting load target for "..(address or 'nil')..".")
-		
-		luup.variable_set(DIMMER_SID, "LoadLevelStatus", newlevel, veraId)
-		luup.variable_set(DIMMER_SID, "LoadLevelTarget", newlevel, veraId)
-		if (newlevel == 0) then
-			luup.variable_set(SWITCH_SID, "Status", 0, veraId)
-			luup.variable_set(SWITCH_SID, "Target", 0, veraId)
-		else
-			luup.variable_set(SWITCH_SID, "Status", 1, veraId)
-			luup.variable_set(SWITCH_SID, "Target", 1, veraId)
-		end
 
-		return (self:getStatus(deviceConfig))
+		local status = (self:getStatus(deviceConfig))
+
+		if (status ~= nil) then
+			luup.log("("..PLUGIN.NAME.."::SENGLED::setLoadLevelTarget) State of device ID "..(veraId or "NIL").." set to: "..bool2string(status.powered)..",  brightness: "..(status.brightness or "NIL")..".")
+			return status
+		else
+			luup.log("("..PLUGIN.NAME.."::SENGLED::setLoadLevelTarget) State of device ID "..(veraId or "NIL").." NOT SET DUE TO ERROR")
+			return nil
+		end
+		
+--		luup.variable_set(DIMMER_SID, "LoadLevelStatus", newlevel, veraId)
+--		luup.variable_set(DIMMER_SID, "LoadLevelTarget", newlevel, veraId)
+--		if (newlevel == 0) then
+--			luup.variable_set(SWITCH_SID, "Status", 0, veraId)
+--			luup.variable_set(SWITCH_SID, "Target", 0, veraId)
+--		else
+--			luup.variable_set(SWITCH_SID, "Status", 1, veraId)
+--			luup.variable_set(SWITCH_SID, "Target", 1, veraId)
+--		end
+
+--		return (self:getStatus(deviceConfig))
 	end,
 
   	setTarget = function(self, deviceConfig, target)
@@ -1118,48 +1133,31 @@ local SENGLED = {
 		local status = {}
 		local lul_device = deviceConfig.VERA_ID
 		local address = deviceConfig.IP
---		veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
---		lightIP1, lightIP2, lightIP3, lightIP4 = string.match(address,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
+		veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
+		lightIP1, lightIP2, lightIP3, lightIP4 = string.match(address,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
 		--
 		--  create and send Set Target msg
 		--
---		local sCommand = string.char(0x0d,0x00,0x02,0x00,0x01)
---		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)		-- set the ip addresses
---		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
---		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)
---		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
---		sCommand = sCommand .. string.char(0x01,0x00,0x01,0x00,0x00,0x00)
---		sCommand = sCommand .. string.char(0x64,0x64)
+		local sCommand = string.char(0x0d,0x00,0x02,0x00,0x01)
+		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)		-- set the ip addresses
+		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
+		sCommand = sCommand .. string.char(veraIP1,veraIP2,veraIP3,veraIP4)
+		sCommand = sCommand .. string.char(lightIP1,lightIP2,lightIP3,lightIP4)
+		sCommand = sCommand .. string.char(0x03,0x00,0x13,0x00)
 
---		local err, resp = self:sendMessage(address, sCommand, retry_count)
---		luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) err: "..(err or "NIL")..".")
---		if (not err) then
-----			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus)   resp: ["..(print_r(resp) or "NIL").."]")
---			local status = self:parseStatusResponse(resp)
---			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Status of switch with address "..(address or "NIL").." is: "..(status.powered  and "ON" or "OFF")..".")
---			return status
---		else
---			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Error getting status of switch with address "..(address or "NIL")..".")
---		end
---		return nil
---		self:sendMessage(address, sCommand)
-		luup.log("("..PLUGIN.NAME.."::SENGLED::setLoadTarget) McGhee Getting load target for "..(address or 'nil')..".")
-		local llstatus = luup.variable_get(DIMMER_SID,"LoadLevelTarget",lul_device)
-		local target = luup.variable_get(DIMMER_SID,"Target",lul_device)
-		debug("("..PLUGIN.NAME.."::SENGLED::getStatus) McGhee lul_device: "..(lul_device or "nil")..", llstatus: "..(llstatus or "nil")..".", 2)
-		llstatus = tonumber(llstatus,10)
-		if (llstatus ~= nil) then
-			status.powered = toBool(llstatus)
-			status.brightness = tonumber(llstatus)
---			status.powered = target
---			status.brightness = llstatus
+		luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Sending Message:("..(address or "nil")..", "..(hex_dump(sCommand) or "nil")..").")
+		local err, resp = self:sendMessage(address, sCommand, 3)
+		luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) err: "..bool2string(err)..".")
+		if (not err) then
+			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus)   resp: ["..(hex_dump(resp) or "NIL").."]")
+			status = self:parseStatusResponse(resp)
+			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus)   sArray: ["..(print_r(sArray) or "NIL").."]")
+			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Status of switch with address "..(address or "NIL").." is: "..(status.powered  and "ON" or "OFF")..".")
+			return status
 		else
-			status.powered = false
-			status.brightness = 0
+			luup.log("("..PLUGIN.NAME.."::SENGLED::getStatus) Error getting status of switch with address "..(address or "NIL")..".")
 		end
-		debug("("..PLUGIN.NAME.."::SENGLED::getStatus) McGhee powered: "..bool2string(status.powered)..", brightness: "..(status.brightness or "nil")..".", 2)
-
-		return status
+		return nil
 	end
 }
 
