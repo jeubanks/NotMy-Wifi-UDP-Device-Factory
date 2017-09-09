@@ -585,14 +585,14 @@ local TPLINK = {
 		return Device
 	end,
 
-	DoDiscovery = function(self,retry_count)
+	DoDiscovery = function(self,LocalNet, retry_count)
 		luup.log("("..PLUGIN.NAME.."::TPLINK::DoDiscovery) Called DoDiscovery("..(retry_count or "nil")..").")
 		if ((retry_count == nil) or (retry_count == 0)) then retry_count = 1 end
 		local resp
 		local resp_ip
 		local resp_port
 		local DISCOVERED = {}
-		local LocalNet = getLocalNet()
+--		local LocalNet = getLocalNet()
 		local msg = self:encodePacket('{ "smartlife.iot.common.cloud" : {"get_info" : {}}, "system" : {"get_sysinfo" : {}},"emeter": {"get_realtime" : {}}, "cnCloud" : {"get_info" : {}}}')
 		
 		repeat
@@ -617,7 +617,7 @@ local TPLINK = {
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
 		if (table.getn(DISCOVERED) == 1000) then
 			-- broadcast search failed - do device by device search
-			local LocalNet = getLocalNet()
+--			local LocalNet = getLocalNet()
 			Idx = 1
 			repeat
 				local tmpIP = LocalNet.."."..Idx
@@ -974,14 +974,14 @@ local SENGLED = {
 		return Device
 	end,
 
-	DoDiscovery = function(self,retry_count)
+	DoDiscovery = function(self, LocalNet, retry_count)
 		luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery) Called DoDiscovery("..(retry_count or "nil")..").")
 		if ((retry_count == nil) or (retry_count == 0)) then retry_count = 1 end
 		local resp
 		local resp_ip
 		local resp_port
 		local DISCOVERED = {}
-		local LocalNet = getLocalNet()
+	--	local LocalNet = getLocalNet()
 		local veraIP1, veraIP2, veraIP3, veraIP4 = string.match(PLUGIN.VERA_IP,"(%d+)%.(%d+)%.(%d+)%.(%d+)")
 		
 		local msg = string.char(0x0d,0x00,0x02,0x00,0x01)
@@ -1016,7 +1016,7 @@ local SENGLED = {
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
 		if (table.getn(DISCOVERED) == 1000) then
 			-- broadcast search failed - do device by device search
-			local LocalNet = getLocalNet()
+--			local LocalNet = getLocalNet()
 			Idx = 1
 			repeat
 				local tmpIP = LocalNet.."."..Idx
@@ -1283,12 +1283,12 @@ local EcoSwitch = {
 		return buffer
 	end,
 	
-	DoDiscovery = function(self, retry_count)
+	DoDiscovery = function(self, LocalNet, retry_count)
 		luup.log("("..PLUGIN.NAME.."::EcoSwitch::DoDiscovery) Called DoDiscovery("..(retry_count or "nil")..").")
 		if ((retry_count == nil) or (retry_count == 0)) then retry_count = 1 end
 		local resp = nil
 		local DISCOVERED = {}
-		local LocalNet = getLocalNet()
+--		local LocalNet = getLocalNet()
 		local msg = self:createMessage("discover")
 		repeat
 			local socket = require("socket")
@@ -1311,7 +1311,7 @@ local EcoSwitch = {
 		until ( (retry_count == 0) or ((resp ~= nil) and (resp ~= "")))
 		if (table.getn(DISCOVERED) == 1000) then
 			-- broadcast search failed - do device by device search
-			local LocalNet = getLocalNet()
+--			local LocalNet = getLocalNet()
 			Idx = 1
 			repeat
 				local tmpIP = LocalNet.."."..Idx
@@ -1945,9 +1945,10 @@ function initChild(vera_id)
 end
 
 function DoDiscovery()
-	local _,ALL_DEVICES = EcoSwitch:DoDiscovery()
-	local _,DISCOVERED_TPLINK_DEVICES = TPLINK:DoDiscovery()
-	local _,DISCOVERED_SENGLED_DEVICES = SENGLED:DoDiscovery()
+	local LocalNet = getLocalNet()
+	local _,ALL_DEVICES = EcoSwitch:DoDiscovery(LocalNet)
+	local _,DISCOVERED_TPLINK_DEVICES = TPLINK:DoDiscovery(LocalNet)
+	local _,DISCOVERED_SENGLED_DEVICES = SENGLED:DoDiscovery(LocalNet)
 	for _,device in pairs(DISCOVERED_TPLINK_DEVICES) do
 		table.insertSet(ALL_DEVICES,device)
 	end
