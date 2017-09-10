@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <?
--- WiFi UDP Switch Controller (formerly ECO Switch)
+-- WiFi UDP Device Factory (formerly ECO Switch)
 -- Version 2.0
 -- Plugin for   ECO Wifi Controlled Outlet,
 --              TP-LINK Wi-Fi Smart Plug and bulbs, and
