@@ -1,5 +1,5 @@
 /*
- * WiFi UDP Device Factory (formerly ECO Switch)
+ * WiFi UDP Switch Controller (formerly ECO Switch)
  * Version 2.0
  * Plugin for 	ECO Wifi Controlled Outlet, 
  * 		TP-LINK Wi-Fi Smart Plug and bulbs, and
@@ -35,7 +35,7 @@
  * Replaces prototype string.escapeHTML
  */
 
-ECO_SID = "urn:micasaverde-com:serviceId:WiFi_UDP_Device1";
+ECO_SID = "urn:micasaverde-com:serviceId:ECO_Switch1";
 
 function EscapeHtml(string)
 {

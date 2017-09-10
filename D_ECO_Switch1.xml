@@ -5,17 +5,17 @@
 		<minor>0</minor>
 	</specVersion>
 	<device>
-		<deviceType>urn:schemas-micasaverde-com:device:WiFi_UDP_Device:1</deviceType>
+		<deviceType>urn:schemas-micasaverde-com:device:ECO_Switch:1</deviceType>
 		<staticJson>D_ECO_Switch1.json</staticJson>
 		<Category_Num>1</Category_Num>
-		<friendlyName>WiFi UDP Device Factory</friendlyName>
+		<friendlyName>Eco Switch</friendlyName>
 		<manufacturer>KAB</manufacturer>
 		<protocol>raw</protocol>
 		<handleChildren>1</handleChildren>
 		<serviceList>
 			<service>
-				<serviceType>urn:schemas-micasaverde-com:service:WiFi_UDP_Device:1</serviceType>
-				<serviceId>urn:micasaverde-com:serviceId:WiFi_UDP_Device1</serviceId>
+				<serviceType>urn:schemas-micasaverde-com:service:ECO_Switch:1</serviceType>
+				<serviceId>urn:micasaverde-com:serviceId:ECO_Switch1</serviceId>
 				<SCPDURL>S_ECO_Switch1.xml</SCPDURL>
 			</service>
 			<service>

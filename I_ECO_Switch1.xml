@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <?
--- WiFi UDP Device Factory (formerly ECO Switch)
+-- WiFi UDP Switch Controller (formerly ECO Switch)
 -- Version 2.0
 -- Plugin for   ECO Wifi Controlled Outlet,
 --              TP-LINK Wi-Fi Smart Plug and bulbs, and
@@ -33,7 +33,7 @@
 	<actionList>
 
 		<action>
-			<serviceId>urn:micasaverde-com:serviceId:WiFi_UDP_Device1</serviceId>
+			<serviceId>urn:micasaverde-com:serviceId:ECO_Switch1</serviceId>
 			<name>AddDiscoveredDevice</name>
 			<job>
 				return UPNP_AddDevice(lul_device,lul_settings)
@@ -41,7 +41,7 @@
 		</action>
 
 		<action>
-			<serviceId>urn:micasaverde-com:serviceId:WiFi_UDP_Device1</serviceId>
+			<serviceId>urn:micasaverde-com:serviceId:ECO_Switch1</serviceId>
 			<name>RenameConfiguredDevice</name>
 			<job>
 				return UPNP_RenameDevice(lul_device,lul_settings)
@@ -49,7 +49,7 @@
 		</action>
 
 		<action>
-			<serviceId>urn:micasaverde-com:serviceId:WiFi_UDP_Device1</serviceId>
+			<serviceId>urn:micasaverde-com:serviceId:ECO_Switch1</serviceId>
 			<name>RemoveConfiguredDevice</name>
 			<job>
 				return UPNP_RemoveDevice(lul_device,lul_settings)

@@ -47,6 +47,6 @@
             "Function": "device_notifications"
         }
     ],
-    "DeviceType": "urn:schemas-micasaverde-com:device:WiFi_UDP_Device:1",
+    "DeviceType": "urn:schemas-micasaverde-com:device:ECO_Switch:1",
     "eventList2": []
 }
