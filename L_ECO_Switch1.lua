@@ -1,5 +1,5 @@
 --
--- WiFi UDP Switch Controller (formerly ECO Switch)
+-- WiFi UDP Device Factory (formerly ECO Switch)
 -- Version 2.0
 -- Plugin for   ECO Wifi Controlled Outlet,
 --              TP-LINK Wi-Fi Smart Plug and bulbs, and
@@ -62,12 +62,12 @@ retryCount = 1
 local socket = require("socket")
 local http = require("socket.http")
 
-local ECO_GATEWAY_DEVICE
+local WIFI_UDP_GATEWAY_DEVICE
 
 local CONFIGURED_DEVICES = {}
 local DISCOVERED_DEVICES = {} 
 
-local ECO_SID = "urn:micasaverde-com:serviceId:ECO_Switch1"
+local WIFI_UDP_SID = "urn:micasaverde-com:serviceId:WiFi_UDP_Device1"
 local SWITCH_SID = "urn:upnp-org:serviceId:SwitchPower1"
 local DIMMER_SID = "urn:upnp-org:serviceId:Dimming1"
 local COLOR_SID = "urn:micasaverde-com:serviceId:Color1"
@@ -1111,17 +1111,6 @@ local SENGLED = {
 			return nil
 		end
 		
---		luup.variable_set(DIMMER_SID, "LoadLevelStatus", newlevel, veraId)
---		luup.variable_set(DIMMER_SID, "LoadLevelTarget", newlevel, veraId)
---		if (newlevel == 0) then
---			luup.variable_set(SWITCH_SID, "Status", 0, veraId)
---			luup.variable_set(SWITCH_SID, "Target", 0, veraId)
---		else
---			luup.variable_set(SWITCH_SID, "Status", 1, veraId)
---			luup.variable_set(SWITCH_SID, "Target", 1, veraId)
---		end
-
---		return (self:getStatus(deviceConfig))
 	end,
 
   	setTarget = function(self, deviceConfig, target)
@@ -1133,7 +1122,6 @@ local SENGLED = {
 		end
 		debug("("..PLUGIN.NAME.."::SENGLED::setTarget) McGhee target: "..bool2string(target or "nil")..", level: "..(level or "nil")..".", 2)
 		return self:setLoadLevelTarget(deviceConfig, level)
---		return (self:getStatus(deviceConfig))
 	end,
 
 	getStatus = function(self, deviceConfig)
@@ -1470,17 +1458,17 @@ function UPNP_AddDevice(lul_device,lul_settings)
 
 	luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice) CONFIGURED_DEVICES ["..print_r(CONFIGURED_DEVICES).."].",2)
 
-	local rootPtr = luup.chdev.start(ECO_GATEWAY_DEVICE)
+	local rootPtr = luup.chdev.start(WIFI_UDP_GATEWAY_DEVICE)
 	local parameters
 	for k,v in pairs(CONFIGURED_DEVICES) do
 		luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice) Adding/Updating device ["..print_r(v).."].",2)
-		parameters = ECO_SID..",DeviceConfig="..json:encode(v)
+		parameters = WIFI_UDP_SID..",DeviceConfig="..json:encode(v)
 		luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice) Config reports        PROTOCOL ["..(v.PROTOCOL or "NIL").."] TYPE ["..(v.TYPE or "NIL").."].",2)
 		if ((v.PROTOCOL == "") or (v.PROTOCOL == "ECO_SWITCH")) then
 			luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   PROTOCOL   [ECO_SWITCH].",2)
 			luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_BinaryLight1.xml].",2)
 			luup.chdev.append(
-				ECO_GATEWAY_DEVICE, 
+				WIFI_UDP_GATEWAY_DEVICE, 
 				rootPtr,
 				v.ID,
 				v.Name,
@@ -1494,7 +1482,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 			luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   PROTOCOL   [SENGLED].",2)
 			luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableLight1.xml].",2)
 			luup.chdev.append(
-				ECO_GATEWAY_DEVICE, 
+				WIFI_UDP_GATEWAY_DEVICE, 
 				rootPtr,
 				v.ID,
 				v.Name,
@@ -1513,7 +1501,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 					debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee is_color",2)
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableRGBLight1.xml].",2)
 					luup.chdev.append(
-						ECO_GATEWAY_DEVICE, 
+						WIFI_UDP_GATEWAY_DEVICE, 
 						rootPtr,
 						v.ID,
 						v.Name,
@@ -1527,7 +1515,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 					debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee is_variable_color_temp",2)
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableRGBLight2.xml].",2)
 					luup.chdev.append(
-						ECO_GATEWAY_DEVICE, 
+						WIFI_UDP_GATEWAY_DEVICE, 
 						rootPtr,
 						v.ID,
 						v.Name,
@@ -1541,7 +1529,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 					debug("("..PLUGIN.NAME.."::UPNP_AddDevice) McGhee is_dimmable",2)
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_DimmableLight1.xml].",2)
 					luup.chdev.append(
-						ECO_GATEWAY_DEVICE, 
+						WIFI_UDP_GATEWAY_DEVICE, 
 						rootPtr,
 						v.ID,
 						v.Name,
@@ -1554,7 +1542,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 				else
 					luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_BinaryLight1.xml].",2)
 					luup.chdev.append(
-						ECO_GATEWAY_DEVICE, 
+						WIFI_UDP_GATEWAY_DEVICE, 
 						rootPtr,
 						v.ID,
 						v.Name,
@@ -1569,7 +1557,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 				luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   TYPE       [IOT.SMARTPLUGSWITCH].",2)
 				luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice)                   devicetype [D_BinaryLight1.xml].",2)
 				luup.chdev.append(
-					ECO_GATEWAY_DEVICE, 
+					WIFI_UDP_GATEWAY_DEVICE, 
 					rootPtr,
 					v.ID,
 					v.Name,
@@ -1582,7 +1570,7 @@ function UPNP_AddDevice(lul_device,lul_settings)
 			end
 		end
 	end
-	luup.chdev.sync(ECO_GATEWAY_DEVICE, rootPtr)
+	luup.chdev.sync(WIFI_UDP_GATEWAY_DEVICE, rootPtr)
 	luup.log("("..PLUGIN.NAME.."::UPNP_AddDevice) Completed.",2)
 	return 4,0
 end
@@ -1635,7 +1623,7 @@ function UPNP_SetColorRGB(lul_device,lul_settings)
 	if (lul_settings and lul_settings.DeviceNum) then
 		lul_device = tonumber(lul_settings.DeviceNum)
 	end
-	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	local deviceConfig = json:decode(luup.variable_get(WIFI_UDP_SID,"DeviceConfig",lul_device))
 	if (deviceConfig == nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorRGB) DEVICE not configured")
 		return 2,nil
@@ -1650,7 +1638,7 @@ function UPNP_SetColorRGB(lul_device,lul_settings)
 	-- luup.variable_set(SWITCH_SID, "Target", lul_settings.newTargetValue, lul_device)
 	local resp
 	if ((deviceConfig.PROTOCOL == "") or(deviceConfig.PROTOCOL == "ECO_SWITCH")) then
-		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorRGB) ECO Switch devices are not Color capable devices.",1)
+		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorRGB) ECO_SWITCH devices are not Color capable devices.",1)
 		return 2,nil
 	elseif (deviceConfig.PROTOCOL == "TPLINK") then
 		if (toBool(deviceConfig.system.get_sysinfo.is_color)) then
@@ -1678,7 +1666,7 @@ function UPNP_SetColor(lul_device,lul_settings)
 	if (lul_settings and lul_settings.DeviceNum) then
 		lul_device = tonumber(lul_settings.DeviceNum)
 	end
-	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	local deviceConfig = json:decode(luup.variable_get(WIFI_UDP_SID,"DeviceConfig",lul_device))
 	if (deviceConfig == nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColor) DEVICE not configured")
 		return 2,nil
@@ -1721,7 +1709,7 @@ function UPNP_SetColorTemp(lul_device,lul_settings)
 	if (lul_settings and lul_settings.DeviceNum) then
 		lul_device = tonumber(lul_settings.DeviceNum)
 	end
-	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	local deviceConfig = json:decode(luup.variable_get(WIFI_UDP_SID,"DeviceConfig",lul_device))
 	if (deviceConfig == nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetColorTemp) DEVICE not configured")
 		return 2,nil
@@ -1765,7 +1753,7 @@ function UPNP_SetTarget(lul_device,lul_settings)
 	if (lul_settings and lul_settings.DeviceNum) then
 		lul_device = tonumber(lul_settings.DeviceNum)
 	end
-	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	local deviceConfig = json:decode(luup.variable_get(WIFI_UDP_SID,"DeviceConfig",lul_device))
 	if (deviceConfig == nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) DEVICE not configured")
 		return 2,nil
@@ -1788,6 +1776,7 @@ function UPNP_SetTarget(lul_device,lul_settings)
 	end
 	if (resp ~= nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetTarget) Set state to "..(resp.powered and "ON" or "OFF").."]")
+		luup.variable_set(DIMMER_SID, "LoadLevelTarget", resp.powered and resp.brightness or 0, lul_device)
 		luup.variable_set(SWITCH_SID, "Status", (resp.powered and 1 or 0), lul_device)
 		luup.variable_set(DIMMER_SID, "LoadLevelStatus", resp.powered and resp.brightness or 0, lul_device)
 	else
@@ -1802,7 +1791,7 @@ function UPNP_GetStatus(lul_device,lul_settings)
 	if (lul_settings and lul_settings.DeviceNum) then
 		lul_device = tonumber(lul_settings.DeviceNum)
 	end
-	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	local deviceConfig = json:decode(luup.variable_get(WIFI_UDP_SID,"DeviceConfig",lul_device))
 	if (deviceConfig == nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::GetStatus) DEVICE not configured")
 		return 2,nil
@@ -1835,7 +1824,7 @@ function UPNP_SetLoadLevelTarget(lul_device,lul_settings)
 	if (lul_settings and lul_settings.DeviceNum) then
 		lul_device = tonumber(lul_settings.DeviceNum)
 	end
-	local deviceConfig = json:decode(luup.variable_get(ECO_SID,"DeviceConfig",lul_device))
+	local deviceConfig = json:decode(luup.variable_get(WIFI_UDP_SID,"DeviceConfig",lul_device))
 	if (deviceConfig == nil) then
 		luup.log("("..PLUGIN.NAME.."::ACTION::SetLoadLevelTarget) DEVICE not configured")
 		return 2,nil
@@ -1876,7 +1865,7 @@ function UPNP_SetLoadLevelTarget(lul_device,lul_settings)
 	return 4,nil
 end
     
--- scan the vera devices for installed plugin devices (Children of ECO_GATEWAY_DEVICE)
+-- scan the vera devices for installed plugin devices (Children of WIFI_UDP_GATEWAY_DEVICE)
 -- Build the CONFIGURED_DEVICES table
 function findChildDevices()
 	CONFIGURED_DEVICES = {}
@@ -1884,13 +1873,22 @@ function findChildDevices()
 	-- mark installed devices in the VeraDevices table
 	for VeraID,CurDev in pairs(luup.devices) do
 		debug("("..PLUGIN.NAME.."::findChildDevices): testing device [\r\n"..(VeraID or "NIL").." - "..print_r(CurDev).."\r\n].")
-		if (CurDev.device_num_parent == ECO_GATEWAY_DEVICE) then
+		if (CurDev.device_num_parent == WIFI_UDP_GATEWAY_DEVICE) then
 			-- this is one of our devices
 			local devID = CurDev.id
 			debug("("..PLUGIN.NAME.."::findChildDevices): Found Device ID ["..(devID or "NIL").."] VeraID ["..(VeraID or "NIL").."].")
 			-- find the corresponding device in the VeraDevices table
 			if ((devID ~= nil) and (devID ~= "")) then
-				local dConfig = luup.variable_get(ECO_SID,"DeviceConfig",VeraID)
+				local dConfig = luup.variable_get(WIFI_UDP_SID,"DeviceConfig",VeraID)
+			--  **************************************************************************
+			--  !!! REMOVE THIS CODE !!!
+			--
+				if (dConfig == nil) then
+					dConfig = luup.variable_get("urn:micasaverde-com:serviceId:ECO_Switch1","DeviceConfig",VeraID)
+					luup.variable_set(WIFI_UDP_SID,"DeviceConfig", dConfig, VeraID)
+				end
+			--  **************************************************************************
+			--
 				CONFIGURED_DEVICES[VeraID] = json:decode(dConfig)
 				CONFIGURED_DEVICES[VeraID].VERA_ID = VeraID
 				CONFIGURED_DEVICES[VeraID].Name = CurDev.description
@@ -1966,16 +1964,16 @@ end
 
 function init(lul_device)
 	luup.log("("..PLUGIN.NAME.."::Init) Starting...")
-	ECO_GATEWAY_DEVICE = lul_device
+	WIFI_UDP_GATEWAY_DEVICE = lul_device
 	getMiosVersion()
 	getVeraIP()
 	ICONS:CreateIcons()
 	ICONS = nil
-	luup.variable_set(ECO_SID,"PLUGIN_VERSION",version,ECO_GATEWAY_DEVICE)
+	luup.variable_set(WIFI_UDP_SID,"PLUGIN_VERSION",version,WIFI_UDP_GATEWAY_DEVICE)
 	-- get the available devices
-	PLUGIN.PollPeriod = luup.variable_get(ECO_SID,"PollPeriod",ECO_GATEWAY_DEVICE)
+	PLUGIN.PollPeriod = luup.variable_get(WIFI_UDP_SID,"PollPeriod",WIFI_UDP_GATEWAY_DEVICE)
 	PLUGIN.PollPeriod = tonumber(PLUGIN.PollPeriod,10) or 60
-	luup.variable_set(ECO_SID,"PollPeriod",PLUGIN.PollPeriod,ECO_GATEWAY_DEVICE)
+	luup.variable_set(WIFI_UDP_SID,"PollPeriod",PLUGIN.PollPeriod,WIFI_UDP_GATEWAY_DEVICE)
 	
 	_,DISCOVERED_DEVICES = DoDiscovery()
 	-- get the configured devices
@@ -1983,8 +1981,8 @@ function init(lul_device)
 
 	log("("..PLUGIN.NAME.."::init) Configured ["..print_r(CONFIGURED_DEVICES).."]",2)
 
-	luup.variable_set(ECO_SID,"CONFIGURED_DEVICES",json:encode(CONFIGURED_DEVICES),ECO_GATEWAY_DEVICE)
-	luup.variable_set(ECO_SID,"DISCOVERED_DEVICES",json:encode(DISCOVERED_DEVICES),ECO_GATEWAY_DEVICE)
+	luup.variable_set(WIFI_UDP_SID,"CONFIGURED_DEVICES",json:encode(CONFIGURED_DEVICES),WIFI_UDP_GATEWAY_DEVICE)
+	luup.variable_set(WIFI_UDP_SID,"DISCOVERED_DEVICES",json:encode(DISCOVERED_DEVICES),WIFI_UDP_GATEWAY_DEVICE)
 
 	-- mark configured devices that are not discovered as not available - set initial state of discovered devices
 	for vera_id,dConfig in pairs(CONFIGURED_DEVICES) do
@@ -2003,5 +2001,5 @@ function init(lul_device)
 		end
 	end
 	luup.call_delay("PollSwitchs",PLUGIN.PollPeriod,"")
-	return true, "Started", "ECO_Switch"
+	return true, "Started", "WiFi_UDP_Device"
 end
