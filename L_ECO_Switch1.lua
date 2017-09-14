@@ -1002,7 +1002,7 @@ local SENGLED = {
 			local rcv_retry = 4
 			repeat
 				resp, resp_ip, resp_port = udp:receivefrom()
-				luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery) udp:receivefrom got: "..(resp_ip or "NIL")..":"..(resp_port or "NIL")..", \n   resp: ["..hex_dump(resp).."]...", 2)
+--				luup.log("("..PLUGIN.NAME.."::SENGLED::DoDiscovery) udp:receivefrom got: "..(resp_ip or "NIL")..":"..(resp_port or "NIL")..", \n   resp: ["..hex_dump(resp).."]...", 2)
 				rcv_retry = rcv_retry - 1
 			until ((rcv_retry == 0) or (resp and (#resp > 0) and (resp_ip ~= PLUGIN.VERA_IP)))
 			udp:close()
