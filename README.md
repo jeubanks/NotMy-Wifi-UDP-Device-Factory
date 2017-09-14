@@ -1,4 +1,10 @@
 # NotMy-Wifi-UDP-Switch-Controller
+**********************
+NOTE: This does NOT work with CYBRMAGE's new 1.30 version!!!
+Copying these files over 1.30 will override all of his cool new stuff including support for LIFX bulbs!!!
+These modifications are now OFFICIALLY OBSOLETE!!!
+**********************
+
 Original V1.9 of cybrmage's WiFi UDP Switch Controller
 Current version 2.0 with changes by JimMcGhee.
 
